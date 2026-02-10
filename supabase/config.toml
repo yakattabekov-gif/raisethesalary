@@ -1,0 +1,4 @@
+project_id = "mfidbvotfnivnctjkkln"
+
+[functions.process-jira-tasks]
+verify_jwt = false
