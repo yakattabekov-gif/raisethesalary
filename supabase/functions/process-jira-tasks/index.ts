@@ -35,7 +35,7 @@ serve(async (req) => {
     const jiraAuth = btoa(`${settings.jira_email}:${settings.jira_api_token}`);
 
     const jiraResponse = await fetch(
-      `${settings.jira_base_url}/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=20`,
+      `${settings.jira_base_url}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=20`,
       {
         headers: {
           Authorization: `Basic ${jiraAuth}`,
