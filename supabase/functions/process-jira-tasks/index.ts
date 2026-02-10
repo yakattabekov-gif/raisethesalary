@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
+const VERSION = "v2.0.1";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -8,6 +10,8 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  console.log(`[${VERSION}] Request received at ${new Date().toISOString()}`);
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -35,7 +39,7 @@ serve(async (req) => {
     const jiraAuth = btoa(`${settings.jira_email}:${settings.jira_api_token}`);
 
     const jiraResponse = await fetch(
-      `${settings.jira_base_url}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=20`,
+      `${settings.jira_base_url}/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&maxResults=20&fields=summary,description,status`,
       {
         headers: {
           Authorization: `Basic ${jiraAuth}`,
@@ -50,7 +54,9 @@ serve(async (req) => {
     }
 
     const jiraData = await jiraResponse.json();
+    console.log(`[${VERSION}] Jira response keys: ${Object.keys(jiraData).join(', ')}`);
     const issues = jiraData.issues || [];
+    console.log(`[${VERSION}] Found ${issues.length} issues`);
 
     await supabase
       .from("cron_runs")
@@ -180,11 +186,12 @@ serve(async (req) => {
       })
       .eq("id", cronRun?.id);
 
-    return new Response(JSON.stringify({ success: true, processed: processedCount }), {
+    console.log(`[${VERSION}] Completed. Processed ${processedCount} tasks.`);
+    return new Response(JSON.stringify({ success: true, processed: processedCount, _version: VERSION }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    console.error("Cron error:", error);
+    console.error(`[${VERSION}] Cron error:`, error);
     await supabase
       .from("cron_runs")
       .update({
@@ -194,7 +201,7 @@ serve(async (req) => {
       })
       .eq("id", cronRun?.id);
 
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error.message, _version: VERSION }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
