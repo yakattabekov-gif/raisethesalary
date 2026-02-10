@@ -663,18 +663,27 @@ async function executeUpdateReceiver(
         success: true,
       });
 
-      // 3. Build update payload — always include all required fields
+      // 3. Build update payload — spread ALL existing receiver fields, then override
       const updatePayload: any = {
         title: receiver.title,
+        entity: receiver.entity || receiver.title,
         full_name: receiver.full_name,
         phone: receiver.phone,
+        additional_phone: receiver.additional_phone || null,
         city_id: typeof receiver.city_id === 'number' ? receiver.city_id : Number(receiver.city_id),
-        latitude: receiver.latitude != null ? String(receiver.latitude) : "",
-        longitude: receiver.longitude != null ? String(receiver.longitude) : "",
+        latitude: receiver.latitude != null ? Number(receiver.latitude) : null,
+        longitude: receiver.longitude != null ? Number(receiver.longitude) : null,
         street: receiver.street || "",
         house: receiver.house || "",
         full_address: receiver.full_address || "",
         flat: receiver.flat || "",
+        comment: receiver.comment || null,
+        office: receiver.office || null,
+        index: receiver.index || null,
+        company_id: receiver.company_id || null,
+        id: receiver.id,
+        sender_id: receiver.sender_id || null,
+        warehouse_id: receiver.warehouse_id || null,
       };
 
       const beforeState: any = {};
@@ -733,8 +742,8 @@ async function executeUpdateReceiver(
         beforeState.house = receiver.house;
         beforeState.full_address = receiver.full_address;
 
-        if (latitude !== null) updatePayload.latitude = String(latitude);
-        if (longitude !== null) updatePayload.longitude = String(longitude);
+        if (latitude !== null) updatePayload.latitude = latitude;
+        if (longitude !== null) updatePayload.longitude = longitude;
         updatePayload.street = newAddress.street;
         updatePayload.house = newAddress.house;
         updatePayload.full_address = newAddress.full_address;
