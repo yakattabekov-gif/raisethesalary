@@ -1,7 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.0.1";
+const VERSION = "v2.1.0";
+
+// Normalize phone: 8XXXXXXXXXX → +7XXXXXXXXXX, also handle 7XXXXXXXXXX → +7XXXXXXXXXX
+function normalizePhone(phone: string): string {
+  if (!phone) return phone;
+  const digits = phone.replace(/[^\d+]/g, "");
+  // 87771234567 → +77771234567
+  if (/^8\d{10}$/.test(digits)) return `+7${digits.slice(1)}`;
+  // 77771234567 → +77771234567
+  if (/^7\d{10}$/.test(digits)) return `+${digits}`;
+  // already +7...
+  if (/^\+7\d{10}$/.test(digits)) return digits;
+  return phone;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -285,7 +298,9 @@ async function parseWithAI(
 - Если просят сменить ТОЛЬКО ФИО и/или телефон — НЕ включай поле "address", включи только "receiver".
 - Если просят сменить ТОЛЬКО адрес — НЕ включай поле "receiver", включи только "address".
 - Если просят сменить и адрес, и ФИО/телефон — включи оба поля.
-- Телефон должен быть в формате +7XXXXXXXXXX.
+- Телефон КОПИРУЙ ТОЧНО как указан в заявке, НЕ МЕНЯЙ и НЕ ПЕРЕСТАВЛЯЙ цифры. Только замени первую 8 на +7 если номер начинается с 8. Например: 87773954884 → +77773954884.
+- Город определяй из контекста адреса если он не указан явно.
+- Поле "full_address" формируй как: "Казахстан, г. {город}, ул. {улица}, {дом}"
 - Город определяй из контекста адреса если он не указан явно.
 - Поле "full_address" формируй как: "Казахстан, г. {город}, ул. {улица}, {дом}"
 
@@ -316,9 +331,24 @@ async function parseWithAI(
   const aiContent = aiData.choices?.[0]?.message?.content || "";
 
   const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
-  let aiResult = { action: null };
+  let aiResult: any = { action: null };
   if (jsonMatch) {
     aiResult = JSON.parse(jsonMatch[0]);
+  }
+
+  // Post-AI phone validation: extract phone from original text and compare
+  if (aiResult.receiver?.phone) {
+    const fullText = `${summary} ${description}`;
+    // Find phone numbers in original text (8XXXXXXXXXX or +7XXXXXXXXXX or 7XXXXXXXXXX)
+    const phoneMatches = fullText.match(/(?:\+?[78])\d{10}/g);
+    if (phoneMatches && phoneMatches.length > 0) {
+      const originalPhone = normalizePhone(phoneMatches[0]);
+      const aiPhone = normalizePhone(aiResult.receiver.phone);
+      if (aiPhone !== originalPhone) {
+        console.log(`[${VERSION}] Phone mismatch! AI="${aiPhone}", original="${originalPhone}". Using original.`);
+        aiResult.receiver.phone = originalPhone;
+      }
+    }
   }
 
   await supabase.from("execution_logs").insert({
@@ -440,7 +470,7 @@ async function executeUpdateReceiver(
 
   for (const invoice of invoices) {
     try {
-      // 1. Search for invoice to get logistics info
+      // 1. Search for invoice to get logistics-info ID
       const searchResp = await fetch(
         `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
         { headers: { Authorization: `Bearer ${sparkToken}` } }
@@ -449,31 +479,59 @@ async function executeUpdateReceiver(
       const searchData = await searchResp.json();
       const items = searchData.data || searchData.items || searchData || [];
       const item = Array.isArray(items) ? items[0] : items;
-      if (!item) throw new Error("Invoice not found");
-      const receiver = item.receiver || item;
-      if (!receiver?.id) throw new Error("Receiver not found in logistics-info");
+      if (!item?.id) throw new Error("Invoice not found");
 
-      // Log full receiver data for debugging
+      // 2. GET full logistics-info by ID for complete receiver data
+      const fullResp = await fetch(
+        `${sparkUrl}/logistics-info/${item.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${sparkToken}`,
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (compatible; spark-bot/1.0)",
+          },
+        }
+      );
+      if (!fullResp.ok) {
+        const errBody = await fullResp.text().catch(() => "");
+        throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status} - ${errBody}`);
+      }
+      const fullData = await fullResp.json();
+      // The receiver data is nested in the response
+      const logisticsInfo = fullData.data || fullData;
+      const receiver = logisticsInfo.receiver || logisticsInfo;
+      if (!receiver?.id) throw new Error("Receiver not found in full logistics-info");
+
       const receiverCity = receiver.city?.name || receiver.city || "";
-      const receiverCityFromAddress = receiver.full_address?.match(/(?:г\.|город\s)([А-Яа-яЁё]+)/)?.[1] || "";
-      const effectiveReceiverCity = receiverCity || receiverCityFromAddress;
-      console.log(`[${VERSION}] Receiver: id=${receiver.id}, city="${effectiveReceiverCity}", full_address="${receiver.full_address}"`);
+      console.log(`[${VERSION}] Full receiver: id=${receiver.id}, city="${receiverCity}", title="${receiver.title}", phone="${receiver.phone}"`);
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "get_logistics_info",
-        request_data: { invoice },
-        response_data: { receiver_id: receiver.id, city: effectiveReceiverCity, full_address: receiver.full_address, full_name: receiver.full_name, phone: receiver.phone },
+        task_id: taskId, action: "update_receiver", step: "get_full_logistics_info",
+        request_data: { invoice, logistics_info_id: item.id },
+        response_data: { receiver_id: receiver.id, city: receiverCity, title: receiver.title, full_name: receiver.full_name, phone: receiver.phone, city_id: receiver.city_id, latitude: receiver.latitude, longitude: receiver.longitude },
         success: true,
       });
 
-      // Build update payload starting from current receiver data
-      const updatePayload = { ...receiver };
+      // 3. Build update payload from FULL receiver data, only overriding changed fields
+      const updatePayload: any = {
+        title: receiver.title,
+        full_name: receiver.full_name,
+        phone: receiver.phone,
+        city_id: receiver.city_id,
+        latitude: receiver.latitude,
+        longitude: receiver.longitude,
+        street: receiver.street,
+        house: receiver.house,
+        full_address: receiver.full_address,
+        flat: receiver.flat,
+      };
+
       const beforeState: any = {};
       const afterState: any = {};
 
-      // 2. Handle address change if requested
+      // 4. Handle address change if requested
       if (newAddress) {
-        // City validation: if address city doesn't match receiver city → skip
+        const effectiveReceiverCity = receiverCity;
         if (newAddress.city && effectiveReceiverCity &&
           newAddress.city.toLowerCase() !== effectiveReceiverCity.toLowerCase()) {
           const error = `Город не совпадает: запрос="${newAddress.city}" vs заказ="${effectiveReceiverCity}". Обновление отклонено.`;
@@ -490,7 +548,6 @@ async function executeUpdateReceiver(
         if (!yandexApiKey) throw new Error("Yandex Geocoder API key not configured");
 
         const geoQuery = `${newAddress.city}, ${newAddress.street} ${newAddress.house}`;
-        const sparkToken = settings.spark_bearer_token;
         const geoResp = await fetch(
           `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`,
           {
@@ -502,7 +559,7 @@ async function executeUpdateReceiver(
         );
         const geoData = await geoResp.json();
         const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-        const pos = geoMember?.Point?.pos; // "longitude latitude"
+        const pos = geoMember?.Point?.pos;
         let latitude: number | null = null;
         let longitude: number | null = null;
         if (pos) {
@@ -521,40 +578,40 @@ async function executeUpdateReceiver(
         beforeState.street = receiver.street;
         beforeState.house = receiver.house;
         beforeState.full_address = receiver.full_address;
-        beforeState.latitude = receiver.latitude;
-        beforeState.longitude = receiver.longitude;
 
         updatePayload.street = newAddress.street;
         updatePayload.house = newAddress.house;
         updatePayload.full_address = newAddress.full_address;
-        updatePayload.latitude = latitude;
-        updatePayload.longitude = longitude;
+        if (latitude !== null) updatePayload.latitude = latitude;
+        if (longitude !== null) updatePayload.longitude = longitude;
 
         afterState.street = newAddress.street;
         afterState.house = newAddress.house;
         afterState.full_address = newAddress.full_address;
-        afterState.latitude = latitude;
-        afterState.longitude = longitude;
       }
 
-      // 3. Handle name/phone change if requested
+      // 5. Handle name/phone change if requested
       if (newReceiver) {
         if (newReceiver.full_name) {
           beforeState.full_name = receiver.full_name;
           updatePayload.full_name = newReceiver.full_name;
+          // Also update title to match full_name (required field)
+          updatePayload.title = newReceiver.full_name;
           afterState.full_name = newReceiver.full_name;
         }
         if (newReceiver.phone) {
           beforeState.phone = receiver.phone;
-          updatePayload.phone = newReceiver.phone;
-          afterState.phone = newReceiver.phone;
+          const normalizedPhone = normalizePhone(newReceiver.phone);
+          updatePayload.phone = normalizedPhone;
+          afterState.phone = normalizedPhone;
+          console.log(`[${VERSION}] Phone normalized: "${newReceiver.phone}" → "${normalizedPhone}"`);
         }
       }
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_receiver", step: "before_after",
         request_data: { before: beforeState },
-        response_data: { after: afterState }, success: true,
+        response_data: { after: afterState, payload_keys: Object.keys(updatePayload) }, success: true,
       });
 
       if (dryRun) {
@@ -562,7 +619,8 @@ async function executeUpdateReceiver(
         continue;
       }
 
-      // 4. Single PUT request with all changes
+      // 6. Single PUT request with full receiver data + changes
+      console.log(`[${VERSION}] PUT /receivers/${receiver.id} payload:`, JSON.stringify(updatePayload));
       const updateResp = await fetch(`${sparkUrl}/receivers/${receiver.id}`, {
         method: "PUT",
         headers: {
