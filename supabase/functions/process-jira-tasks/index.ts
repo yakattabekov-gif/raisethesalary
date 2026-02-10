@@ -608,18 +608,17 @@ async function executeUpdateReceiver(
         success: true,
       });
 
-      // 3. Build update payload from FULL receiver data, only overriding changed fields
+      // 3. Build update payload — always include all required fields
       const updatePayload: any = {
         title: receiver.title,
         full_name: receiver.full_name,
         phone: receiver.phone,
-        city_id: receiver.city_id,
-        latitude: receiver.latitude,
-        longitude: receiver.longitude,
+        city_id: typeof receiver.city_id === 'number' ? receiver.city_id : Number(receiver.city_id),
+        latitude: receiver.latitude ? Number(receiver.latitude) : receiver.latitude,
+        longitude: receiver.longitude ? Number(receiver.longitude) : receiver.longitude,
         street: receiver.street,
         house: receiver.house,
         full_address: receiver.full_address,
-        flat: receiver.flat,
       };
 
       const beforeState: any = {};
@@ -678,11 +677,14 @@ async function executeUpdateReceiver(
         beforeState.house = receiver.house;
         beforeState.full_address = receiver.full_address;
 
+        updatePayload.latitude = latitude !== null ? String(latitude) : updatePayload.latitude;
+        updatePayload.longitude = longitude !== null ? String(longitude) : updatePayload.longitude;
         updatePayload.street = newAddress.street;
         updatePayload.house = newAddress.house;
         updatePayload.full_address = newAddress.full_address;
-        if (latitude !== null) updatePayload.latitude = latitude;
-        if (longitude !== null) updatePayload.longitude = longitude;
+        updatePayload.street = newAddress.street;
+        updatePayload.house = newAddress.house;
+        updatePayload.full_address = newAddress.full_address;
 
         afterState.street = newAddress.street;
         afterState.house = newAddress.house;
