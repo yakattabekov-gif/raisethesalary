@@ -143,97 +143,85 @@ serve(async (req) => {
       }
 
       try {
-        let aiResult: any = { action: null };
+        let aiResult: any = { actions: [] };
 
         if (aiEnabled) {
           aiResult = await parseWithAI(settings, summary, description, supabase, taskId);
         }
 
+        // Store first action for backward compat in DB column
+        const primaryAction = aiResult.actions?.[0]?.action || null;
         await supabase
           .from("processed_tasks")
-          .update({ ai_response: aiResult, action: aiResult.action })
+          .update({ ai_response: aiResult, action: primaryAction })
           .eq("id", taskId);
 
-        if (!aiResult.action) {
+        if (!aiResult.actions || aiResult.actions.length === 0) {
           await supabase
             .from("processed_tasks")
-            .update({ status: "ignored", execution_result: { message: "Заявка не относится к отмене/смене адреса/смене данных получателя/смене оплаты" } })
+            .update({ status: "ignored", execution_result: { message: "Заявка не содержит поддерживаемых действий" } })
             .eq("id", taskId);
           processedCount++;
           continue;
         }
 
-        if (aiResult.action === "cancel") {
-          const results = await executeCancelOrders(supabase, settings, aiResult.invoices || [], taskId, dryRun);
-          const allSuccess = results.every((r: any) => r.success);
-          const anySuccess = results.some((r: any) => r.success);
-          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
-          await supabase
-            .from("processed_tasks")
-            .update({ status: finalStatus, execution_result: results })
-            .eq("id", taskId);
+        // Execute all actions sequentially, collect all results and comment lines
+        const allResults: any[] = [];
+        const allCommentLines: string[] = [];
+        let allSuccess = true;
+        let anySuccess = false;
 
-          if (!dryRun && allSuccess) await transitionJiraIssue(settings, jiraAuth, issueKey);
-          if (anySuccess) {
-            const commentLines = results.map((r: any) =>
-              r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`
-            );
-            await addJiraComment(settings, jiraAuth, issueKey,
-              `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат отмены:\n${commentLines.join("\n")}`
-            );
-          }
-          if (!dryRun && allSuccess) {
-            await delay(3000);
-            await transitionJiraIssue(settings, jiraAuth, issueKey);
-          }
+        for (const actionItem of aiResult.actions) {
+          if (actionItem.action === "cancel") {
+            const results = await executeCancelOrders(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`);
+            });
 
-        } else if (aiResult.action === "update_receiver") {
-          const results = await executeUpdateReceiver(supabase, settings, aiResult, taskId, dryRun);
-          const allSuccess2 = results.every((r: any) => r.success);
-          const anySuccess2 = results.some((r: any) => r.success);
-          const finalStatus2 = allSuccess2 ? "completed" : (anySuccess2 ? "completed" : "ignored");
-          await supabase
-            .from("processed_tasks")
-            .update({ status: finalStatus2, execution_result: results })
-            .eq("id", taskId);
+          } else if (actionItem.action === "update_receiver") {
+            const results = await executeUpdateReceiver(supabase, settings, actionItem, taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`);
+            });
 
-          if (!dryRun && allSuccess2) await transitionJiraIssue(settings, jiraAuth, issueKey);
-          if (anySuccess2) {
-            const commentLines = results.map((r: any) =>
-              r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`
-            );
-            await addJiraComment(settings, jiraAuth, issueKey,
-              `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обновления:\n${commentLines.join("\n")}`
-            );
+          } else if (actionItem.action === "update_payment") {
+            const results = await executeUpdatePayment(supabase, settings, actionItem, taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`);
+            });
           }
-          if (!dryRun && allSuccess2) {
-            await delay(3000);
-            await transitionJiraIssue(settings, jiraAuth, issueKey);
-          }
+        }
 
-        } else if (aiResult.action === "update_payment") {
-          const results = await executeUpdatePayment(supabase, settings, aiResult, taskId, dryRun);
-          const allSuccess3 = results.every((r: any) => r.success);
-          const anySuccess3 = results.some((r: any) => r.success);
-          const finalStatus3 = allSuccess3 ? "completed" : (anySuccess3 ? "completed" : "ignored");
-          await supabase
-            .from("processed_tasks")
-            .update({ status: finalStatus3, execution_result: results })
-            .eq("id", taskId);
+        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+        await supabase
+          .from("processed_tasks")
+          .update({ status: finalStatus, execution_result: allResults })
+          .eq("id", taskId);
 
-          if (!dryRun && allSuccess3) await transitionJiraIssue(settings, jiraAuth, issueKey);
-          if (anySuccess3) {
-            const commentLines = results.map((r: any) =>
-              r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`
-            );
-            await addJiraComment(settings, jiraAuth, issueKey,
-              `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат смены оплаты:\n${commentLines.join("\n")}`
-            );
-          }
-          if (!dryRun && allSuccess3) {
-            await delay(3000);
-            await transitionJiraIssue(settings, jiraAuth, issueKey);
-          }
+        // Post comment with all results
+        if (anySuccess && allCommentLines.length > 0) {
+          await addJiraComment(settings, jiraAuth, issueKey,
+            `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обработки:\n${allCommentLines.join("\n")}`
+          );
+        }
+
+        // Transition to Done (double-close)
+        if (!dryRun && allSuccess) {
+          await transitionJiraIssue(settings, jiraAuth, issueKey);
+          await delay(3000);
+          await transitionJiraIssue(settings, jiraAuth, issueKey);
         }
 
         processedCount++;
@@ -292,81 +280,98 @@ async function parseWithAI(
 
   const systemPrompt = `Ты — строгий парсер заявок из Jira Service Desk. 
 
-ТВОЯ ЕДИНСТВЕННАЯ ЗАДАЧА — определить, является ли заявка одной из следующих:
-1. ОТМЕНА ЗАКАЗА — клиент ЯВНО просит ОТМЕНИТЬ заказ/накладную (слова: "отменить", "отмена заказа", "аннулировать")
-2. СМЕНА АДРЕСА ДОСТАВКИ (только адрес ПОЛУЧАТЕЛЯ/доставки!) — клиент просит изменить адрес доставки
-3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ
-4. СМЕНА ОПЛАТЫ — клиент просит изменить тип оплаты (на наличку, на платежи, оплата получателем/отправителем) или выставить наложенный платеж
+ТВОЯ ЗАДАЧА — определить ВСЕ действия, которые клиент просит выполнить в одной заявке. Заявка может содержать НЕСКОЛЬКО действий одновременно.
+
+Поддерживаемые действия:
+1. ОТМЕНА ЗАКАЗА (action: "cancel") — клиент ЯВНО просит ОТМЕНИТЬ заказ/накладную (слова: "отменить", "отмена заказа", "аннулировать")
+2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — клиент просит изменить адрес доставки (только ПОЛУЧАТЕЛЯ!)
+3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ
+4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить тип оплаты
 
 ⚠️ КРИТИЧЕСКИ ВАЖНЫЕ ОГРАНИЧЕНИЯ ДЛЯ ОТМЕНЫ:
-- "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. Верни {"action": null}.
+- "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. ИГНОРИРУЙ.
 - "Убрать наложенный платеж" / "убрать НП" — это НЕ отмена. Это изменение оплаты.
 - Отмена (action: "cancel") ТОЛЬКО если клиент ЯВНО пишет "отменить заказ", "отмена", "аннулировать накладную".
-- Если есть ЛЮБОЕ сомнение — это НЕ отмена. Верни {"action": null}.
+- Если есть ЛЮБОЕ сомнение — это НЕ отмена.
 
-ЕСЛИ заявка НЕ относится ни к одному из этих типов — ОБЯЗАТЕЛЬНО верни {"action": null}.
-Примеры заявок которые нужно ИГНОРИРОВАТЬ (action: null):
-- "Убрать ДК", "снять ДК", "убрать доставку курьером" — это НЕ отмена!
+Заявки которые нужно ИГНОРИРОВАТЬ:
+- "Убрать ДК", "снять ДК", "убрать доставку курьером" — НЕ отмена!
 - Смена типа доставки (курьерская → самовывоз и т.д.)
-- Смена адреса ЗАБОРА / адреса отправителя
-- Редактирование данных ОТПРАВИТЕЛЯ (ФИО, телефон отправителя)
-- Вопросы о статусе заказа
-- Жалобы на качество
-- Запросы на возврат денег
-- Запросы информации
-- Любые другие типы заявок
+- Смена адреса ЗАБОРА / данных ОТПРАВИТЕЛЯ
+- Вопросы о статусе, жалобы, возвраты, запросы информации
 
-ВАЖНО: Мы работаем ТОЛЬКО с получателем. Любые запросы про отправителя, забор, sender — ИГНОРИРУЙ.
+ВАЖНО: Мы работаем ТОЛЬКО с получателем. Запросы про отправителя — ИГНОРИРУЙ.
 
-СТРОГО верни JSON без комментариев:
+ФОРМАТ ОТВЕТА — МАССИВ ДЕЙСТВИЙ:
+Верни JSON с массивом "actions". Каждое действие — отдельный объект.
+Если действий нет — верни {"actions": []}.
 
-Если это ОТМЕНА заказа:
+ПОРЯДОК ВЫПОЛНЕНИЯ ВАЖЕН: сначала обновления (update_receiver, update_payment), потом отмена (cancel).
+
+Пример с НЕСКОЛЬКИМИ действиями (смена адреса + смена получателя + отмена):
 {
-  "action": "cancel",
-  "invoices": ["KXT110098207"]
+  "actions": [
+    {
+      "action": "update_receiver",
+      "invoices": ["SP00493934"],
+      "address": {"city": null, "street": "Тайбурыл", "house": "23/1", "full_address": "ул. Тайбурыл, 23/1"},
+      "receiver": {"full_name": "Мейржан", "phone": "+77777777777"}
+    },
+    {
+      "action": "cancel",
+      "invoices": ["SP00493934"]
+    }
+  ]
 }
 
-Если это СМЕНА АДРЕСА и/или ДАННЫХ ПОЛУЧАТЕЛЯ:
+Пример с ОДНИМ действием (только отмена):
 {
-  "action": "update_receiver",
-  "invoices": ["KXT110098207"],
-  "address": {
-    "city": "Алматы",
-    "street": "Алтын Алма",
-    "house": "151",
-    "full_address": "Казахстан, г. Алматы, ул. Алтын Алма, 151"
-  },
-  "receiver": {
-    "full_name": "ИВАНОВ ИВАН",
-    "phone": "+77001234567"
-  }
+  "actions": [
+    {
+      "action": "cancel",
+      "invoices": ["KXT110098207"]
+    }
+  ]
 }
 
-Если это СМЕНА ОПЛАТЫ:
+Пример СМЕНА АДРЕСА и/или ДАННЫХ ПОЛУЧАТЕЛЯ:
 {
-  "action": "update_payment",
-  "invoices": ["KXT110098207"],
-  "payment": {
-    "payment_type": 2,
-    "payment_method": 4,
-    "cash_sum": null
-  }
+  "actions": [
+    {
+      "action": "update_receiver",
+      "invoices": ["KXT110098207"],
+      "address": {"city": "Алматы", "street": "Алтын Алма", "house": "151", "full_address": "Казахстан, г. Алматы, ул. Алтын Алма, 151"},
+      "receiver": {"full_name": "ИВАНОВ ИВАН", "phone": "+77001234567"}
+    }
+  ]
 }
+
+Пример СМЕНА ОПЛАТЫ:
+{
+  "actions": [
+    {
+      "action": "update_payment",
+      "invoices": ["KXT110098207"],
+      "payment": {"payment_type": 2, "payment_method": 4, "cash_sum": null}
+    }
+  ]
+}
+
 Правила для payment:
-- payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано явно — ВСЕГДА ставь 2.
-- payment_method: 4 = наличка, 2 = платежи/безнал. Определи из текста.
-- cash_sum: указывай ТОЛЬКО если в заявке ЯВНО написана сумма (например "выставить 5000 тенге"). Если сумма не указана — null.
+- payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — ставь 2.
+- payment_method: 4 = наличка, 2 = платежи/безнал.
+- cash_sum: ТОЛЬКО если сумма ЯВНО указана. Иначе null.
 
 Важные правила:
-- НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры, например KXT110098207, SP00493507 и т.д.
-- Если НЕТ номера накладной — верни {"action": null}.
-- Если просят сменить ТОЛЬКО ФИО и/или телефон — НЕ включай поле "address", включи только "receiver".
-- Если просят сменить ТОЛЬКО адрес — НЕ включай поле "receiver", включи только "address".
-- Если просят сменить и адрес, и ФИО/телефон — включи оба поля.
-- Телефон КОПИРУЙ ТОЧНО как указан в заявке, НЕ МЕНЯЙ и НЕ ПЕРЕСТАВЛЯЙ цифры. Только замени первую 8 на +7 если номер начинается с 8. Например: 87773954884 → +77773954884.
-- ГОРОД: Если город НЕ указан явно в тексте заявки (словами "Алматы", "Астана" и т.д.) — НЕ заполняй поле "city", оставь его как null. НЕ УГАДЫВАЙ город из названия улицы или номера дома. Адреса вроде "С312 11", "мкр Жетысу 2" — это улицы/микрорайоны, а НЕ города.
-- Поле "full_address": если город неизвестен, формируй без города: "ул. {улица}, {дом}". Если город известен: "Казахстан, г. {город}, ул. {улица}, {дом}".
-- "street" и "house" — разделяй правильно. Например "С312 11" → street: "С312", house: "11".
+- НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры (KXT110098207, SP00493507...).
+- Если НЕТ номера накладной — верни {"actions": []}.
+- Если просят сменить ТОЛЬКО ФИО/телефон — НЕ включай "address", только "receiver".
+- Если просят сменить ТОЛЬКО адрес — НЕ включай "receiver", только "address".
+- Если просят и адрес, и ФИО/телефон — включи оба в ОДНОМ update_receiver.
+- Телефон КОПИРУЙ ТОЧНО. Только замени первую 8 на +7 (87773954884 → +77773954884).
+- ГОРОД: Если не указан явно — city: null. НЕ УГАДЫВАЙ из названия улицы.
+- full_address: без города → "ул. {улица}, {дом}". С городом → "Казахстан, г. {город}, ул. {улица}, {дом}".
+- street и house — разделяй правильно. "С312 11" → street: "С312", house: "11".
 
 ВЕРНИ ТОЛЬКО JSON, без текста вокруг.`;
 
@@ -395,9 +400,16 @@ async function parseWithAI(
   const aiContent = aiData.choices?.[0]?.message?.content || "";
 
   const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
-  let aiResult: any = { action: null };
+  // Support both old format {"action": ...} and new format {"actions": [...]}
+  let aiResult: any = { actions: [] };
   if (jsonMatch) {
-    aiResult = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed.actions && Array.isArray(parsed.actions)) {
+      aiResult = parsed;
+    } else if (parsed.action) {
+      // Legacy single-action format → convert to multi-action
+      aiResult = { actions: [parsed] };
+    }
   }
 
   // Post-AI phone validation: extract phone from original text and compare
