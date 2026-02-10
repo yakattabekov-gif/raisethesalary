@@ -349,7 +349,7 @@ async function executeCancelOrders(
   for (const invoice of invoices) {
     try {
       const searchResp = await fetch(
-        `${sparkUrl.replace('/cabinet/api/v2', '')}/admin/logistics-info?search=${encodeURIComponent(invoice)}`,
+        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
         { headers: { Authorization: `Bearer ${sparkToken}` } }
       );
       if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
@@ -370,7 +370,7 @@ async function executeCancelOrders(
       }
 
       const cancelResp = await fetch(
-        `${sparkUrl.replace('/cabinet/api/v2', '')}/logistics-info/${item.id}/cancel`,
+        `${sparkUrl}/logistics-info/${item.id}/cancel`,
         { method: "POST", headers: { Authorization: `Bearer ${sparkToken}` } }
       );
       if (!cancelResp.ok) throw new Error(`Cancel failed: ${cancelResp.status}`);
