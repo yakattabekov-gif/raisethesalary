@@ -147,34 +147,42 @@ serve(async (req) => {
 
         if (aiResult.action === "cancel") {
           const results = await executeCancelOrders(supabase, settings, aiResult.invoices || [], taskId, dryRun);
+          const allSuccess = results.every((r: any) => r.success);
+          const anySuccess = results.some((r: any) => r.success);
+          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
           await supabase
             .from("processed_tasks")
-            .update({ status: "completed", execution_result: results })
+            .update({ status: finalStatus, execution_result: results })
             .eq("id", taskId);
 
-          const allSuccess = results.every((r: any) => r.success);
-          const commentLines = results.map((r: any) =>
-            r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`
-          );
-          await addJiraComment(settings, jiraAuth, issueKey,
-            `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат отмены:\n${commentLines.join("\n")}`
-          );
+          if (anySuccess) {
+            const commentLines = results.map((r: any) =>
+              r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`
+            );
+            await addJiraComment(settings, jiraAuth, issueKey,
+              `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат отмены:\n${commentLines.join("\n")}`
+            );
+          }
           if (!dryRun && allSuccess) await transitionJiraIssue(settings, jiraAuth, issueKey);
 
         } else if (aiResult.action === "update_receiver") {
           const results = await executeUpdateReceiver(supabase, settings, aiResult, taskId, dryRun);
+          const allSuccess2 = results.every((r: any) => r.success);
+          const anySuccess2 = results.some((r: any) => r.success);
+          const finalStatus2 = allSuccess2 ? "completed" : (anySuccess2 ? "completed" : "ignored");
           await supabase
             .from("processed_tasks")
-            .update({ status: "completed", execution_result: results })
+            .update({ status: finalStatus2, execution_result: results })
             .eq("id", taskId);
 
-          const allSuccess2 = results.every((r: any) => r.success);
-          const commentLines = results.map((r: any) =>
-            r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`
-          );
-          await addJiraComment(settings, jiraAuth, issueKey,
-            `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обновления:\n${commentLines.join("\n")}`
-          );
+          if (anySuccess2) {
+            const commentLines = results.map((r: any) =>
+              r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`
+            );
+            await addJiraComment(settings, jiraAuth, issueKey,
+              `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обновления:\n${commentLines.join("\n")}`
+            );
+          }
           if (!dryRun && allSuccess2) await transitionJiraIssue(settings, jiraAuth, issueKey);
         }
 
@@ -564,7 +572,11 @@ async function executeUpdateReceiver(
         body: JSON.stringify(updatePayload),
       });
 
-      if (!updateResp.ok) throw new Error(`Update receiver failed: ${updateResp.status}`);
+      if (!updateResp.ok) {
+        const errBody = await updateResp.text().catch(() => "");
+        console.error(`[${VERSION}] Update receiver failed: ${updateResp.status}, body: ${errBody}`);
+        throw new Error(`Update receiver failed: ${updateResp.status} - ${errBody}`);
+      }
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_receiver", step: "update_receiver_api",
