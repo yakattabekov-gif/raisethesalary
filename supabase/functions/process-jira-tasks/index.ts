@@ -403,7 +403,8 @@ async function parseWithAI(
 
 async function addJiraComment(settings: Record<string, string>, auth: string, issueKey: string, body: string) {
   try {
-    await fetch(`${settings.jira_base_url}/rest/api/3/issue/${issueKey}/comment`, {
+    const baseUrl = settings.jira_base_url.replace(/\/+$/, "");
+    const resp = await fetch(`${baseUrl}/rest/api/3/issue/${issueKey}/comment`, {
       method: "POST",
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -413,30 +414,61 @@ async function addJiraComment(settings: Record<string, string>, auth: string, is
         },
       }),
     });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error(`[${VERSION}] Failed to add Jira comment: ${resp.status} - ${errText}`);
+    } else {
+      console.log(`[${VERSION}] Comment added to ${issueKey}`);
+    }
   } catch (e) {
-    console.error("Failed to add Jira comment:", e);
+    console.error(`[${VERSION}] Failed to add Jira comment:`, e);
   }
 }
 
 async function transitionJiraIssue(settings: Record<string, string>, auth: string, issueKey: string) {
   try {
-    const transResp = await fetch(
-      `${settings.jira_base_url}/rest/api/3/issue/${issueKey}/transitions`,
-      { headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" } }
-    );
+    const baseUrl = settings.jira_base_url.replace(/\/+$/, "");
+    const url = `${baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
+    console.log(`[${VERSION}] Getting transitions for ${issueKey}: ${url}`);
+    
+    const transResp = await fetch(url, {
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    });
+    
+    if (!transResp.ok) {
+      const errText = await transResp.text();
+      console.error(`[${VERSION}] Failed to get transitions: ${transResp.status} - ${errText}`);
+      return;
+    }
+    
     const transData = await transResp.json();
+    console.log(`[${VERSION}] Available transitions for ${issueKey}:`, JSON.stringify(transData.transitions?.map((t: any) => ({ id: t.id, name: t.name }))));
+    
     const doneTransition = transData.transitions?.find(
-      (t: any) => t.name.toLowerCase().includes("done") || t.name.toLowerCase().includes("готово")
+      (t: any) => {
+        const name = t.name.toLowerCase();
+        return name.includes("done") || name.includes("готово") || name.includes("закрыт") || name.includes("выполнен") || name.includes("resolved");
+      }
     );
+    
     if (doneTransition) {
-      await fetch(`${settings.jira_base_url}/rest/api/3/issue/${issueKey}/transitions`, {
+      console.log(`[${VERSION}] Transitioning ${issueKey} to "${doneTransition.name}" (id: ${doneTransition.id})`);
+      const postResp = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
         body: JSON.stringify({ transition: { id: doneTransition.id } }),
       });
+      if (!postResp.ok) {
+        const errText = await postResp.text();
+        console.error(`[${VERSION}] Transition POST failed: ${postResp.status} - ${errText}`);
+      } else {
+        console.log(`[${VERSION}] Transition successful for ${issueKey}`);
+      }
+    } else {
+      console.error(`[${VERSION}] No "done" transition found for ${issueKey}. Available: ${JSON.stringify(transData.transitions?.map((t: any) => t.name))}`);
     }
   } catch (e) {
-    console.error("Failed to transition Jira issue:", e);
+    console.error(`[${VERSION}] Failed to transition Jira issue ${issueKey}:`, e);
   }
 }
 
