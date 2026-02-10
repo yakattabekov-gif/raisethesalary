@@ -165,6 +165,14 @@ serve(async (req) => {
           continue;
         }
 
+        // Collect invoices that will be cancelled — skip updates for them
+        const cancelledInvoices = new Set<string>();
+        for (const actionItem of aiResult.actions) {
+          if (actionItem.action === "cancel") {
+            (actionItem.invoices || []).forEach((inv: string) => cancelledInvoices.add(inv));
+          }
+        }
+
         // Execute all actions sequentially, collect all results and comment lines
         const allResults: any[] = [];
         const allCommentLines: string[] = [];
@@ -183,7 +191,16 @@ serve(async (req) => {
             });
 
           } else if (actionItem.action === "update_receiver") {
-            const results = await executeUpdateReceiver(supabase, settings, actionItem, taskId, dryRun);
+            // Skip update for invoices that will be cancelled in the same ticket
+            const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
+            if (filteredInvoices.length === 0) {
+              console.log(`[${VERSION}] Skipping update_receiver — all invoices will be cancelled`);
+              allCommentLines.push(`ℹ️ Обновление получателя пропущено — заказ будет отменён`);
+              anySuccess = true;
+              continue;
+            }
+            const modifiedAction = { ...actionItem, invoices: filteredInvoices };
+            const results = await executeUpdateReceiver(supabase, settings, modifiedAction, taskId, dryRun);
             allResults.push(...results);
             const ok = results.every((r: any) => r.success);
             if (!ok) allSuccess = false;
@@ -193,7 +210,16 @@ serve(async (req) => {
             });
 
           } else if (actionItem.action === "update_payment") {
-            const results = await executeUpdatePayment(supabase, settings, actionItem, taskId, dryRun);
+            // Skip update for invoices that will be cancelled
+            const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
+            if (filteredInvoices.length === 0) {
+              console.log(`[${VERSION}] Skipping update_payment — all invoices will be cancelled`);
+              allCommentLines.push(`ℹ️ Смена оплаты пропущена — заказ будет отменён`);
+              anySuccess = true;
+              continue;
+            }
+            const modifiedAction = { ...actionItem, invoices: filteredInvoices };
+            const results = await executeUpdatePayment(supabase, settings, modifiedAction, taskId, dryRun);
             allResults.push(...results);
             const ok = results.every((r: any) => r.success);
             if (!ok) allSuccess = false;
@@ -589,6 +615,15 @@ async function executeUpdateReceiver(
       const item = Array.isArray(items) ? items[0] : items;
       if (!item?.id) throw new Error("Invoice not found");
 
+      // Check if order is already cancelled
+      const orderStatus = item.status?.name || item.status || "";
+      const statusId = item.status?.id || item.status_id || null;
+      if (orderStatus.toLowerCase().includes("отмен") || orderStatus.toLowerCase().includes("cancel") || statusId === 7 || statusId === 8) {
+        console.log(`[${VERSION}] Skipping update for ${invoice}: order already cancelled (status: ${orderStatus})`);
+        results.push({ invoice, success: false, error: `Заказ уже отменён (статус: ${orderStatus})` });
+        continue;
+      }
+
       // 2. GET full logistics-info by ID for complete receiver data
       const fullResp = await fetch(
         `${sparkUrl}/logistics-info/${item.id}`,
@@ -605,8 +640,16 @@ async function executeUpdateReceiver(
         throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status} - ${errBody}`);
       }
       const fullData = await fullResp.json();
-      // The receiver data is nested in the response
       const logisticsInfo = fullData.data || fullData;
+
+      // Also check status from full logistics-info
+      const fullStatus = logisticsInfo.status?.name || logisticsInfo.status || "";
+      if (fullStatus.toLowerCase().includes("отмен") || fullStatus.toLowerCase().includes("cancel")) {
+        console.log(`[${VERSION}] Skipping update for ${invoice}: order cancelled (status: ${fullStatus})`);
+        results.push({ invoice, success: false, error: `Заказ уже отменён (статус: ${fullStatus})` });
+        continue;
+      }
+
       const receiver = logisticsInfo.receiver || logisticsInfo;
       if (!receiver?.id) throw new Error("Receiver not found in full logistics-info");
 
