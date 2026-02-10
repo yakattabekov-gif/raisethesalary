@@ -439,9 +439,15 @@ async function executeUpdateReceiver(
         if (!yandexApiKey) throw new Error("Yandex Geocoder API key not configured");
 
         const geoQuery = `${newAddress.city}, ${newAddress.street} ${newAddress.house}`;
+        const sparkToken = settings.spark_bearer_token;
         const geoResp = await fetch(
           `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`,
-          { headers: { "User-Agent": "spark-bot/1.0 (support@company.kz)" } }
+          {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; spark-bot/1.0)",
+              "Authorization": `Bearer ${sparkToken}`,
+            },
+          }
         );
         const geoData = await geoResp.json();
         const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
