@@ -152,7 +152,7 @@ serve(async (req) => {
         if (!aiResult.action) {
           await supabase
             .from("processed_tasks")
-            .update({ status: "ignored", execution_result: { message: "Заявка не относится к отмене/смене адреса/смене данных получателя" } })
+            .update({ status: "ignored", execution_result: { message: "Заявка не относится к отмене/смене адреса/смене данных получателя/смене оплаты" } })
             .eq("id", taskId);
           processedCount++;
           continue;
@@ -197,6 +197,26 @@ serve(async (req) => {
             );
           }
           if (!dryRun && allSuccess2) await transitionJiraIssue(settings, jiraAuth, issueKey);
+
+        } else if (aiResult.action === "update_payment") {
+          const results = await executeUpdatePayment(supabase, settings, aiResult, taskId, dryRun);
+          const allSuccess3 = results.every((r: any) => r.success);
+          const anySuccess3 = results.some((r: any) => r.success);
+          const finalStatus3 = allSuccess3 ? "completed" : (anySuccess3 ? "completed" : "ignored");
+          await supabase
+            .from("processed_tasks")
+            .update({ status: finalStatus3, execution_result: results })
+            .eq("id", taskId);
+
+          if (anySuccess3) {
+            const commentLines = results.map((r: any) =>
+              r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`
+            );
+            await addJiraComment(settings, jiraAuth, issueKey,
+              `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат смены оплаты:\n${commentLines.join("\n")}`
+            );
+          }
+          if (!dryRun && allSuccess3) await transitionJiraIssue(settings, jiraAuth, issueKey);
         }
 
         processedCount++;
@@ -259,8 +279,9 @@ async function parseWithAI(
 1. ОТМЕНА ЗАКАЗА — клиент просит отменить заказ/накладную
 2. СМЕНА АДРЕСА ДОСТАВКИ (только адрес ПОЛУЧАТЕЛЯ/доставки!) — клиент просит изменить адрес доставки
 3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ
+4. СМЕНА ОПЛАТЫ — клиент просит изменить тип оплаты (на наличку, на платежи, оплата получателем/отправителем) или выставить наложенный платеж
 
-ЕСЛИ заявка НЕ относится ни к одному из этих трёх типов — ОБЯЗАТЕЛЬНО верни {"action": null}.
+ЕСЛИ заявка НЕ относится ни к одному из этих типов — ОБЯЗАТЕЛЬНО верни {"action": null}.
 Примеры заявок которые нужно ИГНОРИРОВАТЬ (action: null):
 - Смена адреса ЗАБОРА / адреса отправителя
 - Редактирование данных ОТПРАВИТЕЛЯ (ФИО, телефон отправителя)
@@ -295,6 +316,21 @@ async function parseWithAI(
     "phone": "+77001234567"
   }
 }
+
+Если это СМЕНА ОПЛАТЫ:
+{
+  "action": "update_payment",
+  "invoices": ["KXT110098207"],
+  "payment": {
+    "payment_type": 2,
+    "payment_method": 4,
+    "cash_sum": null
+  }
+}
+Правила для payment:
+- payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано явно — ВСЕГДА ставь 2.
+- payment_method: 4 = наличка, 2 = платежи/безнал. Определи из текста.
+- cash_sum: указывай ТОЛЬКО если в заявке ЯВНО написана сумма (например "выставить 5000 тенге"). Если сумма не указана — null.
 
 Важные правила:
 - НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры, например KXT110098207, SP00493507 и т.д.
@@ -640,7 +676,148 @@ async function executeUpdateReceiver(
         const errBody = await updateResp.text().catch(() => "");
         console.error(`[${VERSION}] Update receiver failed: ${updateResp.status}, body: ${errBody}`);
         throw new Error(`Update receiver failed: ${updateResp.status} - ${errBody}`);
+}
+
+// ---- Update Payment (payment_type, payment_method, cash_sum) ----
+
+async function executeUpdatePayment(
+  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+) {
+  const results = [];
+  const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
+  const sparkToken = settings.spark_bearer_token;
+  const invoices = aiResult.invoices || [];
+  const paymentData = aiResult.payment || {};
+
+  for (const invoice of invoices) {
+    try {
+      // 1. Search for invoice
+      const searchResp = await fetch(
+        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+        { headers: { Authorization: `Bearer ${sparkToken}` } }
+      );
+      if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const items = searchData.data || searchData.items || searchData || [];
+      const item = Array.isArray(items) ? items[0] : items;
+      if (!item?.id) throw new Error("Invoice not found");
+
+      // 2. GET full logistics-info to get current data
+      const fullResp = await fetch(
+        `${sparkUrl}/logistics-info/${item.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${sparkToken}`,
+            "Accept": "application/json",
+          },
+        }
+      );
+      if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
+      const fullData = await fullResp.json();
+      const logisticsInfo = fullData.data || fullData;
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "update_payment", step: "get_logistics_info",
+        request_data: { invoice, logistics_info_id: item.id },
+        response_data: {
+          current_payment_type: logisticsInfo.payment_type,
+          current_payment_method: logisticsInfo.payment_method,
+          current_cash_sum: logisticsInfo.cash_sum,
+        },
+        success: true,
+      });
+
+      // 3. Build PUT payload from existing data, override only payment fields
+      const updatePayload: any = {
+        additional_service: logisticsInfo.additional_service || { hasCar: false, hasSoftPackage: false, hasRisingToTheFloor: false, hasManipulator: false, hasCrane: false, hasHydraulicTrolley: false, hasGrid: false, hasLoader: false, hasPallet: false },
+        product_name: logisticsInfo.product_name || "-",
+        dop_invoice_number: logisticsInfo.dop_invoice_number || null,
+        annotation: logisticsInfo.annotation || null,
+        cod_payment: logisticsInfo.cod_payment || 0,
+        declared_price: logisticsInfo.declared_price || 0,
+        take_date: logisticsInfo.take_date || new Date().toISOString().split("T")[0],
+        period_id: logisticsInfo.period_id || 3,
+        places: logisticsInfo.places || 1,
+        weight: logisticsInfo.weight || 0,
+        width: logisticsInfo.width || 0,
+        height: logisticsInfo.height || 0,
+        depth: logisticsInfo.depth || 0,
+        volume: logisticsInfo.volume || 0,
+        cargo_name: logisticsInfo.cargo_name || null,
+        should_return_document: logisticsInfo.should_return_document || 0,
+        shipment_type: logisticsInfo.shipment_type || 1,
+        payment_type: paymentData.payment_type ?? logisticsInfo.payment_type ?? 2,
+        payment_method: paymentData.payment_method ?? logisticsInfo.payment_method ?? 4,
+        verify: logisticsInfo.verify || null,
+        is_dangerous: logisticsInfo.is_dangerous || 0,
+        temperature_regime_type_id: logisticsInfo.temperature_regime_type_id || null,
+        invoice_files: logisticsInfo.invoice_files || [],
+        certificate_of_safety_files: logisticsInfo.certificate_of_safety_files || [],
+        temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files || [],
+      };
+
+      // Only add cash_sum if explicitly set
+      if (paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
+        updatePayload.cash_sum = paymentData.cash_sum;
+      } else {
+        updatePayload.cash_sum = logisticsInfo.cash_sum || 0;
       }
+
+      const beforeState = {
+        payment_type: logisticsInfo.payment_type,
+        payment_method: logisticsInfo.payment_method,
+        cash_sum: logisticsInfo.cash_sum,
+      };
+      const afterState = {
+        payment_type: updatePayload.payment_type,
+        payment_method: updatePayload.payment_method,
+        cash_sum: updatePayload.cash_sum,
+      };
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "update_payment", step: "before_after",
+        request_data: { before: beforeState },
+        response_data: { after: afterState }, success: true,
+      });
+
+      if (dryRun) {
+        results.push({ invoice, success: true, dry_run: true, before: beforeState, after: afterState });
+        continue;
+      }
+
+      // 4. PUT to logistics-info/{id}
+      console.log(`[${VERSION}] PUT /logistics-info/${item.id} payment update:`, JSON.stringify(afterState));
+      const updateResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!updateResp.ok) {
+        const errBody = await updateResp.text().catch(() => "");
+        throw new Error(`Update payment failed: ${updateResp.status} - ${errBody}`);
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "update_payment", step: "update_payment_api",
+        request_data: { logistics_info_id: item.id },
+        response_data: { status: updateResp.status, changes: afterState }, success: true,
+      });
+
+      results.push({ invoice, success: true, changes: afterState });
+    } catch (e: any) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "update_payment", step: "error",
+        success: false, error_message: e.message, request_data: { invoice },
+      });
+      results.push({ invoice, success: false, error: e.message });
+    }
+  }
+  return results;
+}
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_receiver", step: "update_receiver_api",
