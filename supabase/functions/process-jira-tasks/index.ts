@@ -626,11 +626,12 @@ async function executeUpdateReceiver(
         full_name: receiver.full_name,
         phone: receiver.phone,
         city_id: typeof receiver.city_id === 'number' ? receiver.city_id : Number(receiver.city_id),
-        latitude: receiver.latitude ? Number(receiver.latitude) : receiver.latitude,
-        longitude: receiver.longitude ? Number(receiver.longitude) : receiver.longitude,
-        street: receiver.street,
-        house: receiver.house,
-        full_address: receiver.full_address,
+        latitude: receiver.latitude != null ? String(receiver.latitude) : "",
+        longitude: receiver.longitude != null ? String(receiver.longitude) : "",
+        street: receiver.street || "",
+        house: receiver.house || "",
+        full_address: receiver.full_address || "",
+        flat: receiver.flat || "",
       };
 
       const beforeState: any = {};
@@ -689,11 +690,8 @@ async function executeUpdateReceiver(
         beforeState.house = receiver.house;
         beforeState.full_address = receiver.full_address;
 
-        updatePayload.latitude = latitude !== null ? String(latitude) : updatePayload.latitude;
-        updatePayload.longitude = longitude !== null ? String(longitude) : updatePayload.longitude;
-        updatePayload.street = newAddress.street;
-        updatePayload.house = newAddress.house;
-        updatePayload.full_address = newAddress.full_address;
+        if (latitude !== null) updatePayload.latitude = String(latitude);
+        if (longitude !== null) updatePayload.longitude = String(longitude);
         updatePayload.street = newAddress.street;
         updatePayload.house = newAddress.house;
         updatePayload.full_address = newAddress.full_address;
@@ -745,8 +743,8 @@ async function executeUpdateReceiver(
 
       if (!updateResp.ok) {
         const errBody = await updateResp.text().catch(() => "");
-        console.error(`[${VERSION}] Update receiver failed: ${updateResp.status}, body: ${errBody}`);
-        throw new Error(`Update receiver failed: ${updateResp.status} - ${errBody}`);
+        console.error(`[${VERSION}] Update receiver failed: ${updateResp.status}, payload: ${JSON.stringify(updatePayload)}, body: ${errBody.substring(0, 500)}`);
+        throw new Error(`Update receiver failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
       }
 
       await supabase.from("execution_logs").insert({
