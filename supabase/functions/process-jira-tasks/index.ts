@@ -79,9 +79,23 @@ serve(async (req) => {
       }
 
       const summary = issue.fields?.summary || "";
-      const description = issue.fields?.description?.content
-        ?.map((block: any) => block.content?.map((c: any) => c.text).join(""))
-        .join("\n") || (typeof issue.fields?.description === "string" ? issue.fields.description : "");
+      // Parse ADF (Atlassian Document Format) recursively
+      const extractTextFromADF = (node: any): string => {
+        if (!node) return "";
+        if (typeof node === "string") return node;
+        if (node.type === "text") return node.text || "";
+        if (node.content && Array.isArray(node.content)) {
+          return node.content.map(extractTextFromADF).join("");
+        }
+        return "";
+      };
+      const descriptionField = issue.fields?.description;
+      const description = typeof descriptionField === "string"
+        ? descriptionField
+        : descriptionField?.content
+          ? descriptionField.content.map((block: any) => extractTextFromADF(block)).filter(Boolean).join("\n")
+          : "";
+      console.log(`[${VERSION}] Issue ${issueKey}: summary="${summary}", description="${description}", raw_desc_type=${typeof descriptionField}`);
 
       let taskId: string;
       if (existing) {
@@ -217,20 +231,20 @@ async function parseWithAI(
   const apiKey = settings.openai_api_key;
   if (!apiKey) throw new Error("OpenAI API Key not configured in settings");
 
-  const systemPrompt = `Ты — парсер заявок из Jira Service Desk. Твоя задача — извлечь данные из текста заявки.
+  const systemPrompt = `Ты — парсер заявок из Jira Service Desk. Твоя задача — извлечь данные из темы И описания заявки.
 
 СТРОГО верни JSON без комментариев:
 
 Если это отмена заказа:
 {
   "action": "cancel",
-  "invoices": ["SP00493507"]
+  "invoices": ["KXT110098207"]
 }
 
 Если это смена адреса и/или ФИО/телефона получателя:
 {
   "action": "update_receiver",
-  "invoices": ["SP00493507"],
+  "invoices": ["KXT110098207"],
   "address": {
     "city": "Алматы",
     "street": "Алтын Алма",
@@ -244,11 +258,13 @@ async function parseWithAI(
 }
 
 Важные правила:
+- НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры, например KXT110098207, SP00493507 и т.д.
 - Если просят сменить ТОЛЬКО ФИО и/или телефон — НЕ включай поле "address", включи только "receiver".
 - Если просят сменить ТОЛЬКО адрес — НЕ включай поле "receiver", включи только "address".
 - Если просят сменить и адрес, и ФИО/телефон — включи оба поля.
-- Номера накладных в формате SP00000000. Их может быть несколько.
 - Телефон должен быть в формате +7XXXXXXXXXX.
+- Город определяй из контекста адреса если он не указан явно.
+- Поле "full_address" формируй как: "Казахстан, г. {город}, ул. {улица}, {дом}"
 
 Если данные не распознаны:
 {
@@ -406,19 +422,29 @@ async function executeUpdateReceiver(
 
   for (const invoice of invoices) {
     try {
-      // 1. Get logistics info
-      const infoResp = await fetch(`${sparkUrl}/logistics-info/${invoice}`, {
-        headers: { Authorization: `Bearer ${sparkToken}` },
-      });
-      if (!infoResp.ok) throw new Error(`Get logistics-info failed: ${infoResp.status}`);
-      const infoData = await infoResp.json();
-      const receiver = infoData.receiver || infoData.data?.receiver;
+      // 1. Search for invoice to get logistics info
+      const searchResp = await fetch(
+        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+        { headers: { Authorization: `Bearer ${sparkToken}` } }
+      );
+      if (!searchResp.ok) throw new Error(`Search logistics-info failed: ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const items = searchData.data || searchData.items || searchData || [];
+      const item = Array.isArray(items) ? items[0] : items;
+      if (!item) throw new Error("Invoice not found");
+      const receiver = item.receiver || item;
       if (!receiver?.id) throw new Error("Receiver not found in logistics-info");
+
+      // Log full receiver data for debugging
+      const receiverCity = receiver.city?.name || receiver.city || "";
+      const receiverCityFromAddress = receiver.full_address?.match(/(?:г\.|город\s)([А-Яа-яЁё]+)/)?.[1] || "";
+      const effectiveReceiverCity = receiverCity || receiverCityFromAddress;
+      console.log(`[${VERSION}] Receiver: id=${receiver.id}, city="${effectiveReceiverCity}", full_address="${receiver.full_address}"`);
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_receiver", step: "get_logistics_info",
         request_data: { invoice },
-        response_data: { receiver_id: receiver.id, city: receiver.city, full_name: receiver.full_name, phone: receiver.phone },
+        response_data: { receiver_id: receiver.id, city: effectiveReceiverCity, full_address: receiver.full_address, full_name: receiver.full_name, phone: receiver.phone },
         success: true,
       });
 
@@ -430,9 +456,9 @@ async function executeUpdateReceiver(
       // 2. Handle address change if requested
       if (newAddress) {
         // City validation: if address city doesn't match receiver city → skip
-        if (newAddress.city && receiver.city &&
-          newAddress.city.toLowerCase() !== receiver.city.toLowerCase()) {
-          const error = `Город не совпадает: запрос="${newAddress.city}" vs заказ="${receiver.city}". Обновление отклонено.`;
+        if (newAddress.city && effectiveReceiverCity &&
+          newAddress.city.toLowerCase() !== effectiveReceiverCity.toLowerCase()) {
+          const error = `Город не совпадает: запрос="${newAddress.city}" vs заказ="${effectiveReceiverCity}". Обновление отклонено.`;
           await supabase.from("execution_logs").insert({
             task_id: taskId, action: "update_receiver", step: "city_check",
             success: false, error_message: error,
