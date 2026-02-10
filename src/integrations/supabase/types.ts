@@ -168,7 +168,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      schedule_cron_job: {
+        Args: {
+          anon_key: string
+          cron_schedule: string
+          function_url: string
+          job_name: string
+        }
+        Returns: undefined
+      }
+      unschedule_cron_job: { Args: { job_name: string }; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

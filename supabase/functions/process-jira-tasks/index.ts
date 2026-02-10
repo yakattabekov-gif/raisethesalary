@@ -1,7 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.1.0";
+const VERSION = "v2.2.0";
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Normalize phone: 8XXXXXXXXXX → +7XXXXXXXXXX, also handle 7XXXXXXXXXX → +7XXXXXXXXXX
 function normalizePhone(phone: string): string {
@@ -169,6 +173,7 @@ serve(async (req) => {
             .update({ status: finalStatus, execution_result: results })
             .eq("id", taskId);
 
+          if (!dryRun && allSuccess) await transitionJiraIssue(settings, jiraAuth, issueKey);
           if (anySuccess) {
             const commentLines = results.map((r: any) =>
               r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`
@@ -177,7 +182,10 @@ serve(async (req) => {
               `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат отмены:\n${commentLines.join("\n")}`
             );
           }
-          if (!dryRun && allSuccess) await transitionJiraIssue(settings, jiraAuth, issueKey);
+          if (!dryRun && allSuccess) {
+            await delay(3000);
+            await transitionJiraIssue(settings, jiraAuth, issueKey);
+          }
 
         } else if (aiResult.action === "update_receiver") {
           const results = await executeUpdateReceiver(supabase, settings, aiResult, taskId, dryRun);
@@ -189,6 +197,7 @@ serve(async (req) => {
             .update({ status: finalStatus2, execution_result: results })
             .eq("id", taskId);
 
+          if (!dryRun && allSuccess2) await transitionJiraIssue(settings, jiraAuth, issueKey);
           if (anySuccess2) {
             const commentLines = results.map((r: any) =>
               r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`
@@ -197,7 +206,10 @@ serve(async (req) => {
               `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обновления:\n${commentLines.join("\n")}`
             );
           }
-          if (!dryRun && allSuccess2) await transitionJiraIssue(settings, jiraAuth, issueKey);
+          if (!dryRun && allSuccess2) {
+            await delay(3000);
+            await transitionJiraIssue(settings, jiraAuth, issueKey);
+          }
 
         } else if (aiResult.action === "update_payment") {
           const results = await executeUpdatePayment(supabase, settings, aiResult, taskId, dryRun);
@@ -209,6 +221,7 @@ serve(async (req) => {
             .update({ status: finalStatus3, execution_result: results })
             .eq("id", taskId);
 
+          if (!dryRun && allSuccess3) await transitionJiraIssue(settings, jiraAuth, issueKey);
           if (anySuccess3) {
             const commentLines = results.map((r: any) =>
               r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`
@@ -217,7 +230,10 @@ serve(async (req) => {
               `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат смены оплаты:\n${commentLines.join("\n")}`
             );
           }
-          if (!dryRun && allSuccess3) await transitionJiraIssue(settings, jiraAuth, issueKey);
+          if (!dryRun && allSuccess3) {
+            await delay(3000);
+            await transitionJiraIssue(settings, jiraAuth, issueKey);
+          }
         }
 
         processedCount++;

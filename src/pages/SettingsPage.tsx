@@ -14,12 +14,15 @@ const SettingsPage = () => {
   const updateSetting = useUpdateSetting();
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [triggerLoading, setTriggerLoading] = useState(false);
+  const [cronSchedule, setCronSchedule] = useState("*/2 * * * *");
+  const [cronLoading, setCronLoading] = useState(false);
 
   useEffect(() => {
     if (settings) {
       const vals: Record<string, string> = {};
       settings.forEach((s) => (vals[s.key] = s.value));
       setFormValues(vals);
+      if (vals.jira_cron_schedule) setCronSchedule(vals.jira_cron_schedule);
     }
   }, [settings]);
 
@@ -146,9 +149,47 @@ const SettingsPage = () => {
         </div>
       </section>
 
-      {/* Manual trigger */}
+      {/* Manual trigger & Cron */}
       <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">Manual Actions</h2>
+        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">Cron & Manual Actions</h2>
+        <div className="space-y-2">
+          <Label className="text-xs text-muted-foreground uppercase tracking-wider">Cron Schedule (cron expression)</Label>
+          <div className="flex gap-2">
+            <Input
+              value={cronSchedule}
+              onChange={(e) => setCronSchedule(e.target.value)}
+              className="font-mono text-sm bg-secondary border-border"
+              placeholder="*/2 * * * *"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={cronLoading}
+              onClick={async () => {
+                setCronLoading(true);
+                try {
+                  const { error } = await supabase.functions.invoke("update-cron-schedule", {
+                    body: { schedule: cronSchedule },
+                  });
+                  if (error) throw error;
+                  // Also save to settings for persistence
+                  await updateSetting.mutateAsync({ key: "jira_cron_schedule", value: cronSchedule });
+                  toast.success(`Cron schedule updated: ${cronSchedule}`);
+                } catch (e: any) {
+                  toast.error(e.message || "Failed to update cron schedule");
+                } finally {
+                  setCronLoading(false);
+                }
+              }}
+              className="shrink-0"
+            >
+              <Save className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground font-mono">
+            Примеры: */2 * * * * (каждые 2 мин), */5 * * * * (каждые 5 мин), 0 * * * * (каждый час)
+          </p>
+        </div>
         <Button onClick={handleTriggerCron} disabled={triggerLoading} className="gap-2">
           <Play className="w-4 h-4" />
           {triggerLoading ? "Running..." : "Trigger Cron Now"}
