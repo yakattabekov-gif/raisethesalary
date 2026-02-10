@@ -372,13 +372,25 @@ async function parseWithAI(
   ]
 }
 
-Пример СМЕНА ОПЛАТЫ:
+Пример СМЕНА ОПЛАТЫ (на получателя):
 {
   "actions": [
     {
       "action": "update_payment",
       "invoices": ["KXT110098207"],
       "payment": {"payment_type": 2, "payment_method": 4, "cash_sum": null}
+    }
+  ]
+}
+
+Пример СМЕНА ОПЛАТЫ (на отправителя):
+Текст: "Оплата отправителем 100 тнг" или "Оплату на отправителя 100"
+{
+  "actions": [
+    {
+      "action": "update_payment",
+      "invoices": ["KXT110098207"],
+      "payment": {"payment_type": 1, "payment_method": 4, "cash_sum": 100}
     }
   ]
 }
