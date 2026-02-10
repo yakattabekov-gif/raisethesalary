@@ -676,6 +676,24 @@ async function executeUpdateReceiver(
         const errBody = await updateResp.text().catch(() => "");
         console.error(`[${VERSION}] Update receiver failed: ${updateResp.status}, body: ${errBody}`);
         throw new Error(`Update receiver failed: ${updateResp.status} - ${errBody}`);
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "update_receiver", step: "update_receiver_api",
+        request_data: { receiver_id: receiver.id, payload_keys: Object.keys(afterState) },
+        response_data: { status: updateResp.status }, success: true,
+      });
+
+      results.push({ invoice, success: true, changes: afterState });
+    } catch (e: any) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "update_receiver", step: "error",
+        success: false, error_message: e.message, request_data: { invoice },
+      });
+      results.push({ invoice, success: false, error: e.message });
+    }
+  }
+  return results;
 }
 
 // ---- Update Payment (payment_type, payment_method, cash_sum) ----
@@ -811,24 +829,6 @@ async function executeUpdatePayment(
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_payment", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
-      });
-      results.push({ invoice, success: false, error: e.message });
-    }
-  }
-  return results;
-}
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "update_receiver_api",
-        request_data: { receiver_id: receiver.id, payload_keys: Object.keys(afterState) },
-        response_data: { status: updateResp.status }, success: true,
-      });
-
-      results.push({ invoice, success: true, changes: afterState });
-    } catch (e: any) {
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "error",
         success: false, error_message: e.message, request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
