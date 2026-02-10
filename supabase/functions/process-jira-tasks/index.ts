@@ -74,7 +74,7 @@ serve(async (req) => {
         .eq("jira_issue_key", issueKey)
         .single();
 
-      if (existing && (existing.status === "completed" || existing.retry_count >= 2)) {
+      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.retry_count >= 2)) {
         continue;
       }
 
@@ -139,9 +139,8 @@ serve(async (req) => {
         if (!aiResult.action) {
           await supabase
             .from("processed_tasks")
-            .update({ status: "completed", execution_result: { message: "No action detected by AI" } })
+            .update({ status: "ignored", execution_result: { message: "Заявка не относится к отмене/смене адреса/смене данных получателя" } })
             .eq("id", taskId);
-          await addJiraComment(settings, jiraAuth, issueKey, "⚠️ AI не смог определить действие из заявки.");
           processedCount++;
           continue;
         }
@@ -231,17 +230,30 @@ async function parseWithAI(
   const apiKey = settings.openai_api_key;
   if (!apiKey) throw new Error("OpenAI API Key not configured in settings");
 
-  const systemPrompt = `Ты — парсер заявок из Jira Service Desk. Твоя задача — извлечь данные из темы И описания заявки.
+  const systemPrompt = `Ты — строгий парсер заявок из Jira Service Desk. 
+
+ТВОЯ ЕДИНСТВЕННАЯ ЗАДАЧА — определить, является ли заявка одной из следующих:
+1. ОТМЕНА ЗАКАЗА — клиент просит отменить заказ/накладную
+2. СМЕНА АДРЕСА ДОСТАВКИ — клиент просит изменить адрес доставки
+3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ — клиент просит изменить ФИО и/или телефон получателя
+
+ЕСЛИ заявка НЕ относится ни к одному из этих трёх типов — ОБЯЗАТЕЛЬНО верни {"action": null}.
+Примеры заявок которые нужно ИГНОРИРОВАТЬ (action: null):
+- Вопросы о статусе заказа
+- Жалобы на качество
+- Запросы на возврат денег
+- Запросы информации
+- Любые другие типы заявок
 
 СТРОГО верни JSON без комментариев:
 
-Если это отмена заказа:
+Если это ОТМЕНА заказа:
 {
   "action": "cancel",
   "invoices": ["KXT110098207"]
 }
 
-Если это смена адреса и/или ФИО/телефона получателя:
+Если это СМЕНА АДРЕСА и/или ДАННЫХ ПОЛУЧАТЕЛЯ:
 {
   "action": "update_receiver",
   "invoices": ["KXT110098207"],
@@ -259,17 +271,13 @@ async function parseWithAI(
 
 Важные правила:
 - НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры, например KXT110098207, SP00493507 и т.д.
+- Если НЕТ номера накладной — верни {"action": null}.
 - Если просят сменить ТОЛЬКО ФИО и/или телефон — НЕ включай поле "address", включи только "receiver".
 - Если просят сменить ТОЛЬКО адрес — НЕ включай поле "receiver", включи только "address".
 - Если просят сменить и адрес, и ФИО/телефон — включи оба поля.
 - Телефон должен быть в формате +7XXXXXXXXXX.
 - Город определяй из контекста адреса если он не указан явно.
 - Поле "full_address" формируй как: "Казахстан, г. {город}, ул. {улица}, {дом}"
-
-Если данные не распознаны:
-{
-  "action": null
-}
 
 ВЕРНИ ТОЛЬКО JSON, без текста вокруг.`;
 
