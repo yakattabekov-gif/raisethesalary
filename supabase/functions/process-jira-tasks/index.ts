@@ -299,10 +299,9 @@ async function parseWithAI(
 - Если просят сменить ТОЛЬКО адрес — НЕ включай поле "receiver", включи только "address".
 - Если просят сменить и адрес, и ФИО/телефон — включи оба поля.
 - Телефон КОПИРУЙ ТОЧНО как указан в заявке, НЕ МЕНЯЙ и НЕ ПЕРЕСТАВЛЯЙ цифры. Только замени первую 8 на +7 если номер начинается с 8. Например: 87773954884 → +77773954884.
-- Город определяй из контекста адреса если он не указан явно.
-- Поле "full_address" формируй как: "Казахстан, г. {город}, ул. {улица}, {дом}"
-- Город определяй из контекста адреса если он не указан явно.
-- Поле "full_address" формируй как: "Казахстан, г. {город}, ул. {улица}, {дом}"
+- ГОРОД: Если город НЕ указан явно в тексте заявки (словами "Алматы", "Астана" и т.д.) — НЕ заполняй поле "city", оставь его как null. НЕ УГАДЫВАЙ город из названия улицы или номера дома. Адреса вроде "С312 11", "мкр Жетысу 2" — это улицы/микрорайоны, а НЕ города.
+- Поле "full_address": если город неизвестен, формируй без города: "ул. {улица}, {дом}". Если город известен: "Казахстан, г. {город}, ул. {улица}, {дом}".
+- "street" и "house" — разделяй правильно. Например "С312 11" → street: "С312", house: "11".
 
 ВЕРНИ ТОЛЬКО JSON, без текста вокруг.`;
 
@@ -531,10 +530,13 @@ async function executeUpdateReceiver(
 
       // 4. Handle address change if requested
       if (newAddress) {
-        const effectiveReceiverCity = receiverCity;
-        if (newAddress.city && effectiveReceiverCity &&
-          newAddress.city.toLowerCase() !== effectiveReceiverCity.toLowerCase()) {
-          const error = `Город не совпадает: запрос="${newAddress.city}" vs заказ="${effectiveReceiverCity}". Обновление отклонено.`;
+        // If AI didn't determine city, use current receiver's city
+        const requestedCity = newAddress.city || null;
+        const effectiveCity = requestedCity || receiverCity;
+
+        if (requestedCity && receiverCity &&
+          requestedCity.toLowerCase() !== receiverCity.toLowerCase()) {
+          const error = `Город не совпадает: запрос="${requestedCity}" vs заказ="${receiverCity}". Обновление отклонено.`;
           await supabase.from("execution_logs").insert({
             task_id: taskId, action: "update_receiver", step: "city_check",
             success: false, error_message: error,
@@ -543,11 +545,11 @@ async function executeUpdateReceiver(
           continue;
         }
 
-        // Geocoding via Yandex
+        // Geocoding via Yandex — use effective city for geocoding
         const yandexApiKey = settings.yandex_geocoder_api_key;
         if (!yandexApiKey) throw new Error("Yandex Geocoder API key not configured");
 
-        const geoQuery = `${newAddress.city}, ${newAddress.street} ${newAddress.house}`;
+        const geoQuery = `${effectiveCity}, ${newAddress.street} ${newAddress.house}`;
         const geoResp = await fetch(
           `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`,
           {
