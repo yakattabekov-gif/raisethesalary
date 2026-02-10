@@ -106,6 +106,13 @@ const SettingsPage = () => {
             Token: {formValues.spark_bearer_token ? "Configured" : "Missing"}
           </span>
         </div>
+        {renderField("yandex_geocoder_api_key", "Yandex Geocoder API Key", "password")}
+      </section>
+
+      {/* AI */}
+      <section className="space-y-4">
+        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">AI Configuration (OpenAI)</h2>
+        {renderField("openai_api_key", "OpenAI API Key", "password")}
       </section>
 
       {/* System */}
