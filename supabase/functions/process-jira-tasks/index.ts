@@ -152,13 +152,14 @@ serve(async (req) => {
             .update({ status: "completed", execution_result: results })
             .eq("id", taskId);
 
+          const allSuccess = results.every((r: any) => r.success);
           const commentLines = results.map((r: any) =>
             r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`
           );
           await addJiraComment(settings, jiraAuth, issueKey,
             `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат отмены:\n${commentLines.join("\n")}`
           );
-          if (!dryRun) await transitionJiraIssue(settings, jiraAuth, issueKey);
+          if (!dryRun && allSuccess) await transitionJiraIssue(settings, jiraAuth, issueKey);
 
         } else if (aiResult.action === "update_receiver") {
           const results = await executeUpdateReceiver(supabase, settings, aiResult, taskId, dryRun);
@@ -167,13 +168,14 @@ serve(async (req) => {
             .update({ status: "completed", execution_result: results })
             .eq("id", taskId);
 
+          const allSuccess2 = results.every((r: any) => r.success);
           const commentLines = results.map((r: any) =>
             r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`
           );
           await addJiraComment(settings, jiraAuth, issueKey,
             `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обновления:\n${commentLines.join("\n")}`
           );
-          if (!dryRun) await transitionJiraIssue(settings, jiraAuth, issueKey);
+          if (!dryRun && allSuccess2) await transitionJiraIssue(settings, jiraAuth, issueKey);
         }
 
         processedCount++;
