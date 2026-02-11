@@ -8,16 +8,20 @@ function delay(ms: number): Promise<void> {
 }
 
 // Normalize phone: 8XXXXXXXXXX → +7XXXXXXXXXX, also handle 7XXXXXXXXXX → +7XXXXXXXXXX
+// Also fix AI hallucination: +777... (12 digits after +) → +7... (drop extra 7)
 function normalizePhone(phone: string): string {
   if (!phone) return phone;
-  const digits = phone.replace(/[^\d+]/g, "");
+  let digits = phone.replace(/[^\d]/g, "");
+  // Fix AI hallucination: 777028522828 (12 digits starting with 77) → 77028522828 (11 digits)
+  if (digits.length === 12 && digits.startsWith("77")) {
+    console.log(`[normalizePhone] Fixing AI hallucination: ${digits} → ${digits.slice(1)}`);
+    digits = digits.slice(1);
+  }
   // 87771234567 → +77771234567
   if (/^8\d{10}$/.test(digits)) return `+7${digits.slice(1)}`;
   // 77771234567 → +77771234567
   if (/^7\d{10}$/.test(digits)) return `+${digits}`;
-  // already +7...
-  if (/^\+7\d{10}$/.test(digits)) return digits;
-  return phone;
+  return `+${digits}`;
 }
 
 // Check if order was restored after cancellation by looking at order-statuses history
