@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.2.0";
+const VERSION = "v2.3.0";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -227,6 +227,23 @@ serve(async (req) => {
             results.forEach((r: any) => {
               allCommentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`);
             });
+          } else if (actionItem.action === "change_direction") {
+            const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
+            if (filteredInvoices.length === 0) {
+              console.log(`[${VERSION}] Skipping change_direction — all invoices will be cancelled`);
+              allCommentLines.push(`ℹ️ Смена направления пропущена — заказ будет отменён`);
+              anySuccess = true;
+              continue;
+            }
+            const modifiedAction = { ...actionItem, invoices: filteredInvoices };
+            const results = await executeChangeDirection(supabase, settings, modifiedAction, taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: направление изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`);
+            });
           }
         }
 
@@ -313,6 +330,7 @@ async function parseWithAI(
 2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — клиент просит изменить адрес доставки (только ПОЛУЧАТЕЛЯ!)
 3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ
 4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить тип оплаты
+5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — клиент просит сменить город доставки / направление (слова: "сменить направление", "изменить город доставки", "перенаправить в город ...")
 
 ⚠️ КРИТИЧЕСКИ ВАЖНЫЕ ОГРАНИЧЕНИЯ ДЛЯ ОТМЕНЫ:
 - "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. ИГНОРИРУЙ.
@@ -408,6 +426,22 @@ async function parseWithAI(
     }
   ]
 }
+
+Пример СМЕНА НАПРАВЛЕНИЯ:
+Текст: "Прошу сменить направление на Астану" или "Перенаправить заказ в Караганду"
+{
+  "actions": [
+    {
+      "action": "change_direction",
+      "invoices": ["SP00493934"],
+      "city": "Астана"
+    }
+  ]
+}
+
+Правила для change_direction:
+- city: название города назначения. Указывай ТОЧНО как в тексте заявки.
+- Если клиент пишет "сменить направление", "изменить город", "перенаправить" — это change_direction.
 
 Правила для payment:
 - payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — ставь 2.
@@ -976,6 +1010,177 @@ async function executeUpdatePayment(
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_payment", step: "error",
+        success: false, error_message: e.message, request_data: { invoice },
+      });
+      results.push({ invoice, success: false, error: e.message });
+    }
+  }
+  return results;
+}
+
+// ---- Change Direction (city_id update on receiver) ----
+
+async function executeChangeDirection(
+  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+) {
+  const results = [];
+  const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
+  const sparkToken = settings.spark_bearer_token;
+  const invoices = aiResult.invoices || [];
+  const targetCity = aiResult.city;
+
+  if (!targetCity) {
+    return [{ invoice: "N/A", success: false, error: "Город назначения не указан" }];
+  }
+
+  // Look up city_id from spark_cities table
+  const { data: cityRows, error: cityError } = await supabase
+    .from("spark_cities")
+    .select("id, name")
+    .ilike("name", targetCity)
+    .limit(1);
+
+  if (cityError || !cityRows || cityRows.length === 0) {
+    // Try partial match
+    const { data: partialRows } = await supabase
+      .from("spark_cities")
+      .select("id, name")
+      .ilike("name", `%${targetCity}%`)
+      .limit(5);
+
+    if (!partialRows || partialRows.length === 0) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_direction", step: "city_lookup",
+        success: false, error_message: `Город "${targetCity}" не найден в справочнике`,
+      });
+      return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${targetCity}" не найден` }));
+    }
+    // Use first partial match
+    var cityId = partialRows[0].id;
+    var cityName = partialRows[0].name;
+    console.log(`[${VERSION}] City partial match: "${targetCity}" → id=${cityId}, name="${cityName}"`);
+  } else {
+    var cityId = cityRows[0].id;
+    var cityName = cityRows[0].name;
+    console.log(`[${VERSION}] City exact match: "${targetCity}" → id=${cityId}, name="${cityName}"`);
+  }
+
+  await supabase.from("execution_logs").insert({
+    task_id: taskId, action: "change_direction", step: "city_lookup",
+    request_data: { requested_city: targetCity },
+    response_data: { city_id: cityId, city_name: cityName }, success: true,
+  });
+
+  for (const invoice of invoices) {
+    try {
+      // 1. Check invoice status via public endpoint (no auth needed)
+      const statusResp = await fetch(
+        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+      );
+      if (statusResp.ok) {
+        const statusData = await statusResp.json();
+        const statuses = Array.isArray(statusData) ? statusData : (statusData.data || [statusData]);
+        // Check if "Груз в пути" (status_code 206) has state "completed"
+        const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
+        if (inTransit && inTransit.state === "completed") {
+          console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_direction", step: "status_check",
+            request_data: { invoice },
+            response_data: { status: inTransit }, success: false,
+            error_message: "Груз уже в пути — смена направления невозможна",
+          });
+          results.push({ invoice, success: false, error: "Груз уже в пути — смена направления невозможна" });
+          continue;
+        }
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_direction", step: "status_check",
+        request_data: { invoice }, response_data: { passed: true }, success: true,
+      });
+
+      // 2. Search for invoice to get logistics-info
+      const searchResp = await fetch(
+        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+        { headers: { Authorization: `Bearer ${sparkToken}` } }
+      );
+      if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const items = searchData.data || searchData.items || searchData || [];
+      const item = Array.isArray(items) ? items[0] : items;
+      if (!item?.id) throw new Error("Invoice not found");
+
+      // 3. GET full logistics-info for receiver data
+      const fullResp = await fetch(
+        `${sparkUrl}/logistics-info/${item.id}`,
+        { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
+      );
+      if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
+      const fullData = await fullResp.json();
+      const logisticsInfo = fullData.data || fullData;
+      const receiver = logisticsInfo.receiver || logisticsInfo;
+      if (!receiver?.id) throw new Error("Receiver not found");
+
+      // 4. Build PUT payload with new city_id
+      const updatePayload: any = {
+        title: receiver.title,
+        entity: receiver.entity || receiver.title,
+        full_name: receiver.full_name,
+        phone: receiver.phone,
+        additional_phone: receiver.additional_phone || null,
+        city_id: Number(cityId),
+        latitude: receiver.latitude != null ? Number(receiver.latitude) : null,
+        longitude: receiver.longitude != null ? Number(receiver.longitude) : null,
+        street: receiver.street || "",
+        house: receiver.house || "",
+        full_address: receiver.full_address || "",
+        flat: receiver.flat || "",
+        comment: receiver.comment || null,
+        office: receiver.office || null,
+        index: receiver.index || null,
+        company_id: receiver.company_id || null,
+        id: receiver.id,
+        sender_id: receiver.sender_id || null,
+        warehouse_id: receiver.warehouse_id || null,
+      };
+
+      const beforeCity = receiver.city?.name || receiver.city_id;
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_direction", step: "before_after",
+        request_data: { before_city: beforeCity, before_city_id: receiver.city_id },
+        response_data: { after_city: cityName, after_city_id: cityId }, success: true,
+      });
+
+      if (dryRun) {
+        results.push({ invoice, success: true, dry_run: true, city: cityName, before_city: beforeCity });
+        continue;
+      }
+
+      // 5. PUT to receivers/{id}
+      console.log(`[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${cityId} (${cityName})`);
+      const updateResp = await fetch(`${sparkUrl}/receivers/${receiver.id}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!updateResp.ok) {
+        const errBody = await updateResp.text().catch(() => "");
+        throw new Error(`Update receiver direction failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_direction", step: "update_direction_api",
+        request_data: { receiver_id: receiver.id, new_city_id: cityId },
+        response_data: { status: updateResp.status }, success: true,
+      });
+
+      results.push({ invoice, success: true, city: cityName });
+    } catch (e: any) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_direction", step: "error",
         success: false, error_message: e.message, request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
