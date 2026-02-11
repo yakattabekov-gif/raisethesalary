@@ -711,10 +711,10 @@ async function executeUpdateReceiver(
       const item = Array.isArray(items) ? items[0] : items;
       if (!item?.id) throw new Error("Invoice not found");
 
-      // Check if order is already cancelled
+      // Check if order is already cancelled (by status name only, not by status.id which is just a sequential ID)
       const orderStatus = item.status?.name || item.status || "";
-      const statusId = item.status?.id || item.status_id || null;
-      const isCancelledStatus = orderStatus.toLowerCase().includes("отмен") || orderStatus.toLowerCase().includes("cancel") || statusId === 7 || statusId === 8;
+      const orderStatusCode = item.status?.code || null;
+      const isCancelledStatus = orderStatus.toLowerCase().includes("отмен") || orderStatus.toLowerCase().includes("cancel") || orderStatusCode === 503;
       
       if (isCancelledStatus) {
         // Check order-statuses history for restoration (code 233)
