@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.4.0";
+const VERSION = "v2.5.0";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -20,6 +20,35 @@ function normalizePhone(phone: string): string {
   return phone;
 }
 
+// Check if order was restored after cancellation by looking at order-statuses history
+// Returns true if there's a status with code 233 ("Накладная восстановлена") AFTER the last cancellation
+async function checkOrderRestored(invoiceNumber: string, sparkToken: string): Promise<boolean> {
+  try {
+    const historyResp = await fetch(
+      `https://gateway.spark.kz/cabinet/api/order-statuses/${encodeURIComponent(invoiceNumber)}/history`,
+      {
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          "Accept": "application/json",
+        },
+      }
+    );
+    if (!historyResp.ok) {
+      console.log(`[${VERSION}] order-statuses history failed for ${invoiceNumber}: ${historyResp.status}`);
+      return false;
+    }
+    const historyData = await historyResp.json();
+    const statuses = Array.isArray(historyData) ? historyData : (historyData.data || historyData.statuses || historyData.result || []);
+    
+    // Look for restoration status code 233
+    const hasRestoration = statuses.some((s: any) => s.status_code === 233 || s.code === 233);
+    console.log(`[${VERSION}] Order ${invoiceNumber} history: ${statuses.length} statuses, restored=${hasRestoration}`);
+    return hasRestoration;
+  } catch (e: any) {
+    console.warn(`[${VERSION}] Failed to check order restoration for ${invoiceNumber}: ${e.message}`);
+    return false;
+  }
+}
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -678,10 +707,17 @@ async function executeUpdateReceiver(
       // Check if order is already cancelled
       const orderStatus = item.status?.name || item.status || "";
       const statusId = item.status?.id || item.status_id || null;
-      if (orderStatus.toLowerCase().includes("отмен") || orderStatus.toLowerCase().includes("cancel") || statusId === 7 || statusId === 8) {
-        console.log(`[${VERSION}] Skipping update for ${invoice}: order already cancelled (status: ${orderStatus})`);
-        results.push({ invoice, success: false, error: `Заказ уже отменён (статус: ${orderStatus})` });
-        continue;
+      const isCancelledStatus = orderStatus.toLowerCase().includes("отмен") || orderStatus.toLowerCase().includes("cancel") || statusId === 7 || statusId === 8;
+      
+      if (isCancelledStatus) {
+        // Check order-statuses history for restoration (code 233)
+        const isRestored = await checkOrderRestored(invoice, sparkToken);
+        if (!isRestored) {
+          console.log(`[${VERSION}] Skipping update for ${invoice}: order already cancelled (status: ${orderStatus})`);
+          results.push({ invoice, success: false, error: `Заказ уже отменён (статус: ${orderStatus})` });
+          continue;
+        }
+        console.log(`[${VERSION}] Order ${invoice} was cancelled but RESTORED (code 233) — proceeding with update`);
       }
 
       // 2. GET full logistics-info by ID for complete receiver data
@@ -704,10 +740,16 @@ async function executeUpdateReceiver(
 
       // Also check status from full logistics-info
       const fullStatus = logisticsInfo.status?.name || logisticsInfo.status || "";
-      if (fullStatus.toLowerCase().includes("отмен") || fullStatus.toLowerCase().includes("cancel")) {
-        console.log(`[${VERSION}] Skipping update for ${invoice}: order cancelled (status: ${fullStatus})`);
-        results.push({ invoice, success: false, error: `Заказ уже отменён (статус: ${fullStatus})` });
-        continue;
+      const isFullCancelled = fullStatus.toLowerCase().includes("отмен") || fullStatus.toLowerCase().includes("cancel");
+      if (isFullCancelled && !isCancelledStatus) {
+        // Only re-check if we didn't already check above
+        const isRestored = await checkOrderRestored(invoice, sparkToken);
+        if (!isRestored) {
+          console.log(`[${VERSION}] Skipping update for ${invoice}: order cancelled (status: ${fullStatus})`);
+          results.push({ invoice, success: false, error: `Заказ уже отменён (статус: ${fullStatus})` });
+          continue;
+        }
+        console.log(`[${VERSION}] Order ${invoice} was cancelled but RESTORED (code 233) — proceeding`);
       }
 
       const receiver = logisticsInfo.receiver || logisticsInfo;
