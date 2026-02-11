@@ -1176,11 +1176,37 @@ async function executeChangeDirection(
       if (!receiver?.id) throw new Error("Receiver not found");
 
       // 4. Geocode current address in the NEW city
-      const currentStreet = receiver.street || "";
+      // Strip city name from address fields (e.g. "Астана, ул. Тайбурыл, 23/1" → "ул. Тайбурыл, 23/1")
+      const stripCityFromAddress = (addr: string): string => {
+        if (!addr) return addr;
+        // Remove city prefix patterns like "г. Астана, " or "Астана, " or "г.Астана,"
+        const cityPattern = /^(?:г\.?\s*)?[А-Яа-яЁёA-Za-z\-]+\s*,\s*/;
+        const match = addr.match(cityPattern);
+        if (match) {
+          // Verify the extracted part looks like a city name (not a street)
+          const extracted = match[0].replace(/^г\.?\s*/, "").replace(/\s*,\s*$/, "").trim();
+          const normalizedExtracted = extracted.toLowerCase().replace(/ё/g, "е");
+          // Check against known cities in allCities or common city patterns
+          const isCity = allCities?.some((c: any) => {
+            const norm = c.name.toLowerCase().replace(/ё/g, "е");
+            return norm === normalizedExtracted || 
+                   normalizedExtracted.includes(norm) || 
+                   norm.includes(normalizedExtracted);
+          });
+          if (isCity) {
+            console.log(`[${VERSION}] Stripped city "${extracted}" from address: "${addr}"`);
+            return addr.slice(match[0].length).trim();
+          }
+        }
+        return addr;
+      };
+
+      let currentStreet = stripCityFromAddress(receiver.street || "");
       const currentHouse = receiver.house || "";
+      let cleanFullAddress = stripCityFromAddress(receiver.full_address || "");
       let newLatitude = receiver.latitude != null ? Number(receiver.latitude) : null;
       let newLongitude = receiver.longitude != null ? Number(receiver.longitude) : null;
-      let newFullAddress = receiver.full_address || "";
+      let newFullAddress = cleanFullAddress;
 
       if (currentStreet) {
         const yandexApiKey = settings.yandex_geocoder_api_key;
