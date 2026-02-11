@@ -38,10 +38,13 @@ async function checkOrderRestored(invoiceNumber: string, sparkToken: string): Pr
       return false;
     }
     const historyData = await historyResp.json();
+    console.log(`[${VERSION}] Order ${invoiceNumber} raw history sample:`, JSON.stringify(historyData).substring(0, 1500));
     const statuses = Array.isArray(historyData) ? historyData : (historyData.data || historyData.statuses || historyData.result || []);
     
     // Look for restoration status code 233
-    const hasRestoration = statuses.some((s: any) => s.status_code === 233 || s.code === 233);
+    const statusCodes = statuses.map((s: any) => ({ code: s.status?.code || s.status_code || s.code, name: s.status?.name || s.status_name || s.name }));
+    console.log(`[${VERSION}] Order ${invoiceNumber} history codes:`, JSON.stringify(statusCodes).substring(0, 1000));
+    const hasRestoration = statuses.some((s: any) => (s.status?.code === 233) || (s.status_code === 233) || (s.code === 233));
     console.log(`[${VERSION}] Order ${invoiceNumber} history: ${statuses.length} statuses, restored=${hasRestoration}`);
     return hasRestoration;
   } catch (e: any) {
