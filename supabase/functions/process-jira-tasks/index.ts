@@ -1027,43 +1027,81 @@ async function executeChangeDirection(
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
   const sparkToken = settings.spark_bearer_token;
   const invoices = aiResult.invoices || [];
-  const targetCity = aiResult.city;
+  let targetCity = aiResult.city;
 
   if (!targetCity) {
     return [{ invoice: "N/A", success: false, error: "Город назначения не указан" }];
   }
 
-  // Look up city_id from spark_cities table
-  const { data: cityRows, error: cityError } = await supabase
-    .from("spark_cities")
-    .select("id, name")
-    .ilike("name", targetCity)
-    .limit(1);
-
-  if (cityError || !cityRows || cityRows.length === 0) {
-    // Try partial match
-    const { data: partialRows } = await supabase
-      .from("spark_cities")
-      .select("id, name")
-      .ilike("name", `%${targetCity}%`)
-      .limit(5);
-
-    if (!partialRows || partialRows.length === 0) {
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "city_lookup",
-        success: false, error_message: `Город "${targetCity}" не найден в справочнике`,
-      });
-      return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${targetCity}" не найден` }));
+  // If city contains " - " or " – ", take the LAST part (destination city)
+  const separators = [" - ", " – ", " — ", "-"];
+  for (const sep of separators) {
+    if (targetCity.includes(sep)) {
+      const parts = targetCity.split(sep).map((p: string) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        console.log(`[${VERSION}] City pair detected: "${targetCity}" → taking destination: "${parts[parts.length - 1]}"`);
+        targetCity = parts[parts.length - 1];
+      }
+      break;
     }
-    // Use first partial match
-    var cityId = partialRows[0].id;
-    var cityName = partialRows[0].name;
-    console.log(`[${VERSION}] City partial match: "${targetCity}" → id=${cityId}, name="${cityName}"`);
-  } else {
-    var cityId = cityRows[0].id;
-    var cityName = cityRows[0].name;
-    console.log(`[${VERSION}] City exact match: "${targetCity}" → id=${cityId}, name="${cityName}"`);
   }
+
+  // Fuzzy city lookup
+  const { data: allCities } = await supabase
+    .from("spark_cities")
+    .select("id, name");
+
+  if (!allCities || allCities.length === 0) {
+    return invoices.map((inv: string) => ({ invoice: inv, success: false, error: "Справочник городов пуст" }));
+  }
+
+  const normalize = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/[\s-]+/g, " ").trim();
+  const normalizedTarget = normalize(targetCity);
+
+  // Levenshtein distance
+  function levenshtein(a: string, b: string): number {
+    const m = a.length, n = b.length;
+    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    for (let i = 1; i <= m; i++)
+      for (let j = 1; j <= n; j++)
+        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    return dp[m][n];
+  }
+
+  // Find best match
+  let bestMatch: any = null;
+  let bestScore = Infinity;
+  for (const city of allCities) {
+    const normalizedName = normalize(city.name);
+    // Exact match
+    if (normalizedName === normalizedTarget) {
+      bestMatch = city;
+      bestScore = 0;
+      break;
+    }
+    const dist = levenshtein(normalizedTarget, normalizedName);
+    // Normalize score by max length
+    const maxLen = Math.max(normalizedTarget.length, normalizedName.length);
+    const similarity = 1 - dist / maxLen;
+    if (similarity > 0.6 && dist < bestScore) {
+      bestScore = dist;
+      bestMatch = city;
+    }
+  }
+
+  if (!bestMatch) {
+    await supabase.from("execution_logs").insert({
+      task_id: taskId, action: "change_direction", step: "city_lookup",
+      success: false, error_message: `Город "${targetCity}" не найден в справочнике (fuzzy)`,
+    });
+    return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${targetCity}" не найден` }));
+  }
+
+  var cityId = bestMatch.id;
+  var cityName = bestMatch.name;
+  console.log(`[${VERSION}] City fuzzy match: "${targetCity}" → id=${cityId}, name="${cityName}" (distance=${bestScore})`);
 
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "change_direction", step: "city_lookup",
