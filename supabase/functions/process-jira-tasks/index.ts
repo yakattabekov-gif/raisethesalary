@@ -1500,7 +1500,7 @@ async function executeChangeShipmentType(
       // 4. Build full PUT payload — preserve ALL existing values, only change shipment_type
       const updatePayload: any = {
         additional_service: logisticsInfo.additional_service,
-        product_name: logisticsInfo.product_name,
+        product_name: logisticsInfo.product_name || "-",
         dop_invoice_number: logisticsInfo.dop_invoice_number,
         annotation: logisticsInfo.annotation,
         cod_payment: logisticsInfo.cod_payment,
