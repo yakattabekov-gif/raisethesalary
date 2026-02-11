@@ -788,12 +788,15 @@ async function executeUpdateReceiver(
         flat: receiver.flat || "",
         comment: receiver.comment || null,
         office: receiver.office || null,
-        index: receiver.index || null,
         company_id: receiver.company_id || null,
         id: receiver.id,
         sender_id: receiver.sender_id || null,
         warehouse_id: receiver.warehouse_id || null,
       };
+      // Only include index if it has a real value; truncate to 10 chars (API limit)
+      if (receiver.index) {
+        updatePayload.index = String(receiver.index).substring(0, 10);
+      }
 
       const beforeState: any = {};
       const afterState: any = {};
