@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.5.0";
+const VERSION = "v2.6.0";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -280,6 +280,24 @@ serve(async (req) => {
             results.forEach((r: any) => {
               allCommentLines.push(r.success ? `✅ ${r.invoice}: направление изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`);
             });
+          } else if (actionItem.action === "change_shipment_type") {
+            const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
+            if (filteredInvoices.length === 0) {
+              console.log(`[${VERSION}] Skipping change_shipment_type — all invoices will be cancelled`);
+              allCommentLines.push(`ℹ️ Смена типа перевозки пропущена — заказ будет отменён`);
+              anySuccess = true;
+              continue;
+            }
+            const modifiedAction = { ...actionItem, invoices: filteredInvoices };
+            const results = await executeChangeShipmentType(supabase, settings, modifiedAction, taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            const typeLabel = actionItem.shipment_type === 2 ? "Авиа (Экспресс)" : "Авто (Стандарт)";
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: тип перевозки изменён на ${typeLabel}` : `❌ ${r.invoice}: ${r.error}`);
+            });
           }
         }
 
@@ -367,6 +385,7 @@ async function parseWithAI(
 3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ
 4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить тип оплаты
 5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — клиент просит сменить город доставки / направление (слова: "сменить направление", "изменить город доставки", "перенаправить в город ...")
+6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — клиент просит сменить тип перевозки: "стандарт" / "авто" → shipment_type: 1, "экспресс" / "авиа" → shipment_type: 2
 
 ⚠️ КРИТИЧЕСКИ ВАЖНЫЕ ОГРАНИЧЕНИЯ ДЛЯ ОТМЕНЫ:
 - "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. ИГНОРИРУЙ.
@@ -478,6 +497,23 @@ async function parseWithAI(
 Правила для change_direction:
 - city: название города назначения. Указывай ТОЧНО как в тексте заявки.
 - Если клиент пишет "сменить направление", "изменить город", "перенаправить" — это change_direction.
+
+Пример СМЕНА ТИПА ПЕРЕВОЗКИ:
+Текст: "Прошу сменить тип перевозки на экспресс" или "Сделать авиа доставку"
+{
+  "actions": [
+    {
+      "action": "change_shipment_type",
+      "invoices": ["KXT110098207"],
+      "shipment_type": 2
+    }
+  ]
+}
+
+Правила для change_shipment_type:
+- shipment_type: 1 = Авто (Стандарт), 2 = Авиа (Экспресс)
+- Слова "стандарт", "авто", "автоперевозка", "наземная" → shipment_type: 1
+- Слова "экспресс", "авиа", "авиаперевозка", "срочная" → shipment_type: 2
 
 Правила для payment:
 - payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — ставь 2.
@@ -1174,13 +1210,12 @@ async function executeChangeDirection(
         if (Array.isArray(statusData)) {
           statuses = statusData;
         } else if (statusData && typeof statusData === "object") {
-          if (Array.isArray(statusData.data)) {
-            statuses = statusData.data;
-          } else if (Array.isArray(statusData.statuses)) {
-            statuses = statusData.statuses;
-          } else if (Array.isArray(statusData.result)) {
-            statuses = statusData.result;
-          } else {
+          if (Array.isArray(statusData.data?.status_history)) statuses = statusData.data.status_history;
+          else if (Array.isArray(statusData.data)) statuses = statusData.data;
+          else if (Array.isArray(statusData.statuses)) statuses = statusData.statuses;
+          else if (Array.isArray(statusData.status_history)) statuses = statusData.status_history;
+          else if (Array.isArray(statusData.result)) statuses = statusData.result;
+          else {
             // Single status object — wrap it
             statuses = [statusData];
           }
@@ -1358,6 +1393,167 @@ async function executeChangeDirection(
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_direction", step: "error",
+        success: false, error_message: e.message, request_data: { invoice },
+      });
+      results.push({ invoice, success: false, error: e.message });
+    }
+  }
+  return results;
+}
+
+// ---- Change Shipment Type (Авто=1 / Авиа=2) ----
+
+async function executeChangeShipmentType(
+  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+) {
+  const results = [];
+  const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
+  const sparkToken = settings.spark_bearer_token;
+  const invoices = aiResult.invoices || [];
+  const newShipmentType = Number(aiResult.shipment_type);
+
+  if (![1, 2].includes(newShipmentType)) {
+    return [{ invoice: "N/A", success: false, error: `Неверный shipment_type: ${aiResult.shipment_type}. Допустимые: 1 (Авто), 2 (Авиа)` }];
+  }
+
+  for (const invoice of invoices) {
+    try {
+      // 1. Check status via public endpoint — only allow if "Груз в пути" (206) is in state "waiting"
+      const statusResp = await fetch(
+        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+      );
+      if (!statusResp.ok) {
+        throw new Error(`Status check failed: ${statusResp.status}`);
+      }
+      const statusData = await statusResp.json();
+      console.log(`[${VERSION}] Invoice ${invoice} status for shipment_type change:`, JSON.stringify(statusData).substring(0, 500));
+
+      let statuses: any[] = [];
+      if (Array.isArray(statusData)) {
+        statuses = statusData;
+      } else if (statusData && typeof statusData === "object") {
+        if (Array.isArray(statusData.data?.status_history)) statuses = statusData.data.status_history;
+        else if (Array.isArray(statusData.data)) statuses = statusData.data;
+        else if (Array.isArray(statusData.statuses)) statuses = statusData.statuses;
+        else if (Array.isArray(statusData.status_history)) statuses = statusData.status_history;
+        else if (Array.isArray(statusData.result)) statuses = statusData.result;
+        else statuses = [statusData];
+      }
+
+      const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
+      if (!inTransit || inTransit.state !== "waiting") {
+        const currentState = inTransit ? inTransit.state : "not found";
+        const errorMsg = inTransit
+          ? `Статус "Груз в пути" не в состоянии waiting (текущее: ${currentState}) — смена типа перевозки невозможна`
+          : `Статус "Груз в пути" (206) не найден — смена типа перевозки невозможна`;
+        console.log(`[${VERSION}] Invoice ${invoice}: ${errorMsg}`);
+        await supabase.from("execution_logs").insert({
+          task_id: taskId, action: "change_shipment_type", step: "status_check",
+          request_data: { invoice },
+          response_data: { statuses: statuses.map((s: any) => ({ status_code: s.status_code, status_name: s.status_name, state: s.state })) },
+          success: false, error_message: errorMsg,
+        });
+        results.push({ invoice, success: false, error: errorMsg });
+        continue;
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_shipment_type", step: "status_check",
+        request_data: { invoice },
+        response_data: { status: inTransit, passed: true }, success: true,
+      });
+
+      // 2. Search for invoice to get logistics-info ID
+      const searchResp = await fetch(
+        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+        { headers: { Authorization: `Bearer ${sparkToken}` } }
+      );
+      if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const items = searchData.data || searchData.items || searchData || [];
+      const item = Array.isArray(items) ? items[0] : items;
+      if (!item?.id) throw new Error("Invoice not found");
+
+      // 3. GET full logistics-info to build PUT payload
+      const fullResp = await fetch(
+        `${sparkUrl}/logistics-info/${item.id}`,
+        { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
+      );
+      if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
+      const fullData = await fullResp.json();
+      const logisticsInfo = fullData.data || fullData;
+
+      const beforeState = { shipment_type: logisticsInfo.shipment_type };
+      const afterState = { shipment_type: newShipmentType };
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_shipment_type", step: "before_after",
+        request_data: { before: beforeState },
+        response_data: { after: afterState }, success: true,
+      });
+
+      if (dryRun) {
+        results.push({ invoice, success: true, dry_run: true, before: beforeState, after: afterState });
+        continue;
+      }
+
+      // 4. Build full PUT payload with new shipment_type
+      const updatePayload: any = {
+        additional_service: logisticsInfo.additional_service || { hasCar: false, hasSoftPackage: false, hasRisingToTheFloor: false, hasManipulator: false, hasCrane: false, hasHydraulicTrolley: false, hasGrid: false, hasLoader: false, hasPallet: false },
+        product_name: logisticsInfo.product_name || "-",
+        dop_invoice_number: logisticsInfo.dop_invoice_number || null,
+        annotation: logisticsInfo.annotation || null,
+        cod_payment: Number(logisticsInfo.cod_payment) || 0,
+        declared_price: Number(logisticsInfo.declared_price) || 0,
+        take_date: logisticsInfo.take_date || new Date().toISOString().split("T")[0],
+        period_id: Number(logisticsInfo.period_id) || 3,
+        places: Number(logisticsInfo.places) || 1,
+        weight: Number(logisticsInfo.weight) || 0,
+        width: Number(logisticsInfo.width) || 0,
+        height: Number(logisticsInfo.height) || 0,
+        depth: Number(logisticsInfo.depth) || 0,
+        volume: Number(logisticsInfo.volume) || 0,
+        cargo_name: logisticsInfo.cargo_name || null,
+        should_return_document: Number(logisticsInfo.should_return_document) || 0,
+        shipment_type: newShipmentType,
+        payment_type: Number(logisticsInfo.payment_type) || 2,
+        payment_method: Number(logisticsInfo.payment_method) || 4,
+        cash_sum: logisticsInfo.cash_sum || 0,
+        verify: logisticsInfo.verify || null,
+        is_dangerous: Number(logisticsInfo.is_dangerous) || 0,
+        temperature_regime_type_id: logisticsInfo.temperature_regime_type_id || null,
+        invoice_files: logisticsInfo.invoice_files || [],
+        certificate_of_safety_files: logisticsInfo.certificate_of_safety_files || [],
+        temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files || [],
+      };
+
+      // 5. PUT to logistics-info/{id}
+      const typeLabel = newShipmentType === 2 ? "Авиа" : "Авто";
+      console.log(`[${VERSION}] PUT /logistics-info/${item.id} shipment_type change: ${logisticsInfo.shipment_type} → ${newShipmentType} (${typeLabel})`);
+      const updateResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!updateResp.ok) {
+        const errBody = await updateResp.text().catch(() => "");
+        throw new Error(`Update shipment_type failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_shipment_type", step: "update_shipment_type_api",
+        request_data: { logistics_info_id: item.id },
+        response_data: { status: updateResp.status, changes: afterState }, success: true,
+      });
+
+      results.push({ invoice, success: true, changes: afterState });
+    } catch (e: any) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_shipment_type", step: "error",
         success: false, error_message: e.message, request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
