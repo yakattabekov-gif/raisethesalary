@@ -1117,7 +1117,22 @@ async function executeChangeDirection(
       );
       if (statusResp.ok) {
         const statusData = await statusResp.json();
-        const statuses = Array.isArray(statusData) ? statusData : (statusData.data || [statusData]);
+        console.log(`[${VERSION}] Invoice ${invoice} status response:`, JSON.stringify(statusData).substring(0, 500));
+        let statuses: any[] = [];
+        if (Array.isArray(statusData)) {
+          statuses = statusData;
+        } else if (statusData && typeof statusData === "object") {
+          if (Array.isArray(statusData.data)) {
+            statuses = statusData.data;
+          } else if (Array.isArray(statusData.statuses)) {
+            statuses = statusData.statuses;
+          } else if (Array.isArray(statusData.result)) {
+            statuses = statusData.result;
+          } else {
+            // Single status object — wrap it
+            statuses = [statusData];
+          }
+        }
         // Check if "Груз в пути" (status_code 206) has state "completed"
         const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
         if (inTransit && inTransit.state === "completed") {
