@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.3.0";
+const VERSION = "v2.4.0";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1175,7 +1175,53 @@ async function executeChangeDirection(
       const receiver = logisticsInfo.receiver || logisticsInfo;
       if (!receiver?.id) throw new Error("Receiver not found");
 
-      // 4. Build PUT payload with new city_id
+      // 4. Geocode current address in the NEW city
+      const currentStreet = receiver.street || "";
+      const currentHouse = receiver.house || "";
+      let newLatitude = receiver.latitude != null ? Number(receiver.latitude) : null;
+      let newLongitude = receiver.longitude != null ? Number(receiver.longitude) : null;
+      let newFullAddress = receiver.full_address || "";
+
+      if (currentStreet) {
+        const yandexApiKey = settings.yandex_geocoder_api_key;
+        if (yandexApiKey) {
+          const geoQuery = `${cityName}, ${currentStreet} ${currentHouse}`.trim();
+          console.log(`[${VERSION}] Geocoding address in new city: "${geoQuery}"`);
+          try {
+            const geoResp = await fetch(
+              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
+            );
+            const geoData = await geoResp.json();
+            const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+            const pos = geoMember?.Point?.pos;
+            if (pos) {
+              const [lon, lat] = pos.split(" ").map(Number);
+              newLatitude = lat;
+              newLongitude = lon;
+              const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
+              if (formattedAddr) newFullAddress = formattedAddr;
+              console.log(`[${VERSION}] Geocoded in ${cityName}: lat=${lat}, lon=${lon}, addr="${formattedAddr}"`);
+            }
+            await supabase.from("execution_logs").insert({
+              task_id: taskId, action: "change_direction", step: "geocoding_new_city",
+              request_data: { query: geoQuery },
+              response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
+              success: !!geoMember,
+            });
+          } catch (geoErr: any) {
+            console.warn(`[${VERSION}] Geocoding failed for direction change: ${geoErr.message}`);
+            await supabase.from("execution_logs").insert({
+              task_id: taskId, action: "change_direction", step: "geocoding_new_city",
+              request_data: { query: `${cityName}, ${currentStreet} ${currentHouse}` },
+              success: false, error_message: geoErr.message,
+            });
+          }
+        } else {
+          console.warn(`[${VERSION}] Yandex Geocoder API key not configured — skipping address geocoding for direction change`);
+        }
+      }
+
+      // 5. Build PUT payload with new city_id and geocoded coordinates
       const updatePayload: any = {
         title: receiver.title,
         entity: receiver.entity || receiver.title,
@@ -1183,11 +1229,11 @@ async function executeChangeDirection(
         phone: receiver.phone,
         additional_phone: receiver.additional_phone || null,
         city_id: Number(cityId),
-        latitude: receiver.latitude != null ? Number(receiver.latitude) : null,
-        longitude: receiver.longitude != null ? Number(receiver.longitude) : null,
-        street: receiver.street || "",
-        house: receiver.house || "",
-        full_address: receiver.full_address || "",
+        latitude: newLatitude,
+        longitude: newLongitude,
+        street: currentStreet,
+        house: currentHouse,
+        full_address: newFullAddress,
         flat: receiver.flat || "",
         comment: receiver.comment || null,
         office: receiver.office || null,
@@ -1202,17 +1248,17 @@ async function executeChangeDirection(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_direction", step: "before_after",
-        request_data: { before_city: beforeCity, before_city_id: receiver.city_id },
-        response_data: { after_city: cityName, after_city_id: cityId }, success: true,
+        request_data: { before_city: beforeCity, before_city_id: receiver.city_id, before_address: receiver.full_address },
+        response_data: { after_city: cityName, after_city_id: cityId, after_address: newFullAddress, lat: newLatitude, lon: newLongitude }, success: true,
       });
 
       if (dryRun) {
-        results.push({ invoice, success: true, dry_run: true, city: cityName, before_city: beforeCity });
+        results.push({ invoice, success: true, dry_run: true, city: cityName, before_city: beforeCity, new_address: newFullAddress });
         continue;
       }
 
-      // 5. PUT to receivers/{id}
-      console.log(`[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${cityId} (${cityName})`);
+      // 6. PUT to receivers/{id}
+      console.log(`[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${cityId} (${cityName}), address="${newFullAddress}"`);
       const updateResp = await fetch(`${sparkUrl}/receivers/${receiver.id}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
