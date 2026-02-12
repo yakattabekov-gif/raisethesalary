@@ -453,7 +453,7 @@ async function parseWithAI(
 Поддерживаемые действия:
 1. ОТМЕНА ЗАКАЗА (action: "cancel") — клиент ЯВНО просит ОТМЕНИТЬ заказ/накладную (слова: "отменить", "отмена заказа", "аннулировать")
 2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — клиент просит изменить адрес доставки (только ПОЛУЧАТЕЛЯ!)
-3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ
+3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ, а также ДОБАВИТЬ ДОП.НОМЕР
 4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить тип оплаты
 5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — клиент просит сменить город доставки / направление (слова: "сменить направление", "изменить город доставки", "перенаправить в город ...")
 6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — клиент просит сменить тип перевозки: "стандарт" / "авто" → shipment_type: 1, "экспресс" / "авиа" → shipment_type: 2
@@ -488,7 +488,7 @@ async function parseWithAI(
       "action": "update_receiver",
       "invoices": ["SP00493934"],
       "address": {"city": null, "street": "Тайбурыл", "house": "23/1", "full_address": "ул. Тайбурыл, 23/1"},
-      "receiver": {"full_name": "Мейржан", "phone": "+77777777777", "entity": "Мейржан"}
+      "receiver": {"full_name": "Мейржан", "phone": "+77777777777", "additional_phone": "+77777777778", "entity": "Мейржан"}
     },
     {
       "action": "cancel",
@@ -651,6 +651,7 @@ async function parseWithAI(
 - Поле "entity" — это название организации/компании (например "ТОО Клиника Хадиша", "ИП Рахмет"). Если в тексте упоминается название организации — ОБЯЗАТЕЛЬНО включи его в receiver/sender как "entity".
 - При изменении данных получателя/отправителя — ВСЕГДА копируй entity из текста заявки. Если entity указан — ставь его И в full_name, И в entity.
 - Телефон КОПИРУЙ ТОЧНО. Только замени первую 8 на +7 (87773954884 → +77773954884).
+- ДОП.НОМЕР (additional_phone): Если в заявке указано 2 номера телефона — первый ставь в "phone", второй в "additional_phone". Если написано "добавить доп.номер", "доп.телефон", "дополнительный номер" — обязательно извлеки этот номер в "additional_phone". Если доп.номер не указан — НЕ включай поле additional_phone.
 - ГОРОД: Если не указан явно — city: null. НЕ УГАДЫВАЙ из названия улицы.
 - full_address: без города → "ул. {улица}, {дом}". С городом → "Казахстан, г. {город}, ул. {улица}, {дом}".
 - street и house — разделяй правильно. "С312 11" → street: "С312", house: "11".
@@ -1089,6 +1090,13 @@ async function executeUpdateReceiver(
           updatePayload.phone = normalizedPhone;
           afterState.phone = normalizedPhone;
           console.log(`[${VERSION}] Phone normalized: "${newReceiver.phone}" → "${normalizedPhone}"`);
+        }
+        if (newReceiver.additional_phone) {
+          beforeState.additional_phone = receiver.additional_phone || null;
+          const normalizedAdditionalPhone = normalizePhone(newReceiver.additional_phone);
+          updatePayload.additional_phone = normalizedAdditionalPhone;
+          afterState.additional_phone = normalizedAdditionalPhone;
+          console.log(`[${VERSION}] Additional phone normalized: "${newReceiver.additional_phone}" → "${normalizedAdditionalPhone}"`);
         }
       }
 
