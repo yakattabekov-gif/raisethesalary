@@ -1,12 +1,13 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, ListTodo, ScrollText, Settings, Zap, Bot, Sparkles, FlaskConical } from "lucide-react";
+import { LayoutDashboard, ListTodo, Brain, Globe, Settings, Zap, Bot, Sparkles, FlaskConical } from "lucide-react";
 import { useSettings, useUpdateSetting } from "@/hooks/useSettings";
 import { Switch } from "@/components/ui/switch";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/requests", icon: ListTodo, label: "Заявки" },
-  { to: "/logs", icon: ScrollText, label: "Логи" },
+  { to: "/logs/ai", icon: Brain, label: "Логи AI" },
+  { to: "/logs/curl", icon: Globe, label: "Логи запросов" },
   { to: "/settings", icon: Settings, label: "Настройки" },
 ];
 
@@ -26,10 +27,8 @@ const AdminLayout = () => {
 
   return (
     <div className="min-h-screen bg-secondary/30">
-      {/* Top Navigation */}
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          {/* Logo */}
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
@@ -38,10 +37,11 @@ const AdminLayout = () => {
               <span className="text-base font-bold text-foreground tracking-tight">Spark Bot</span>
             </div>
 
-            {/* Nav Links */}
             <nav className="hidden md:flex items-center gap-1">
               {navItems.map(({ to, icon: Icon, label }) => {
-                const isActive = to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+                const isActive = to === "/"
+                  ? location.pathname === "/"
+                  : location.pathname.startsWith(to);
                 return (
                   <NavLink
                     key={to}
@@ -60,35 +60,20 @@ const AdminLayout = () => {
             </nav>
           </div>
 
-          {/* Right side: toggles */}
           <div className="flex items-center gap-5">
-            {/* Dry-run pill */}
-            {dryRun && (
-              <span className="pill-warning text-[11px] font-semibold">
-                DRY-RUN
-              </span>
-            )}
+            {dryRun && <span className="pill-warning text-[11px] font-semibold">DRY-RUN</span>}
 
-            {/* Toggle controls */}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
                 <FlaskConical className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground hidden lg:inline">Dry-run</span>
-                <Switch
-                  checked={dryRun}
-                  onCheckedChange={() => toggleSetting("dry_run", dryRun)}
-                  className="scale-90"
-                />
+                <Switch checked={dryRun} onCheckedChange={() => toggleSetting("dry_run", dryRun)} className="scale-90" />
               </label>
 
               <label className="flex items-center gap-2 cursor-pointer">
                 <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground hidden lg:inline">AI</span>
-                <Switch
-                  checked={aiEnabled}
-                  onCheckedChange={() => toggleSetting("ai_enabled", aiEnabled)}
-                  className="scale-90"
-                />
+                <Switch checked={aiEnabled} onCheckedChange={() => toggleSetting("ai_enabled", aiEnabled)} className="scale-90" />
               </label>
 
               <div className="w-px h-6 bg-border" />
@@ -96,13 +81,9 @@ const AdminLayout = () => {
               <label className="flex items-center gap-2 cursor-pointer">
                 <Bot className="w-4 h-4 text-muted-foreground" />
                 <span className="text-xs font-medium text-muted-foreground hidden lg:inline">Бот</span>
-                <Switch
-                  checked={botEnabled}
-                  onCheckedChange={() => toggleSetting("bot_enabled", botEnabled)}
-                />
+                <Switch checked={botEnabled} onCheckedChange={() => toggleSetting("bot_enabled", botEnabled)} />
               </label>
 
-              {/* Status indicator */}
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${botEnabled ? "bg-success animate-pulse" : "bg-muted-foreground/30"}`} />
                 <span className="text-[11px] text-muted-foreground hidden lg:inline">
@@ -114,7 +95,6 @@ const AdminLayout = () => {
         </div>
       </header>
 
-      {/* Main content */}
       <main className="max-w-7xl mx-auto px-6 py-8">
         <Outlet />
       </main>
