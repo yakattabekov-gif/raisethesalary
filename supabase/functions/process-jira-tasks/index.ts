@@ -1138,12 +1138,8 @@ async function executeUpdatePayment(
         cargo_name: logisticsInfo.cargo_name || null,
         should_return_document: Number(logisticsInfo.should_return_document) || 0,
         shipment_type: Number(logisticsInfo.shipment_type) || 1,
-        payment_type: Number.isInteger(parseInt(paymentData.payment_type ?? logisticsInfo.payment_type, 10))
-          ? parseInt(paymentData.payment_type ?? logisticsInfo.payment_type, 10)
-          : 2,
-        payment_method: Number.isInteger(parseInt(paymentData.payment_method ?? logisticsInfo.payment_method, 10))
-          ? parseInt(paymentData.payment_method ?? logisticsInfo.payment_method, 10)
-          : 4,
+        payment_type: Number(paymentData.payment_type ?? logisticsInfo.payment_type ?? 2),
+        payment_method: Number(paymentData.payment_method ?? logisticsInfo.payment_method ?? 4),
         verify: logisticsInfo.verify || null,
         is_dangerous: Number(logisticsInfo.is_dangerous) || 0,
         temperature_regime_type_id: logisticsInfo.temperature_regime_type_id || null,
@@ -1730,8 +1726,8 @@ async function executeChangeShipmentType(
         cargo_name: logisticsInfo.cargo_name,
         should_return_document: logisticsInfo.should_return_document,
         shipment_type: newShipmentType,
-        payment_type: logisticsInfo.payment_type,
-        payment_method: logisticsInfo.payment_method,
+        payment_type: logisticsInfo.payment_type_id,
+        payment_method: logisticsInfo.payment_method_id,
         cash_sum: logisticsInfo.cash_sum,
         verify: logisticsInfo.verify,
         is_dangerous: logisticsInfo.is_dangerous,
