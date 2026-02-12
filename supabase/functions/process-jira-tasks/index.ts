@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.8.0";
+const VERSION = "v2.6.0";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -127,8 +127,7 @@ serve(async (req) => {
         .eq("jira_issue_key", issueKey)
         .single();
 
-      // Allow "waiting_for_info" tasks to be reprocessed (check comments for invoice number)
-      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || (existing.status !== "waiting_for_info" && existing.retry_count >= 2))) {
+      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || existing.retry_count >= 2)) {
         console.log(`[${VERSION}] Skipping ${issueKey}: status=${existing.status}, retry_count=${existing.retry_count}`);
         continue;
       }
@@ -181,31 +180,9 @@ serve(async (req) => {
 
       try {
         let aiResult: any = { actions: [] };
-        let combinedDescription = description;
-
-        // If task is waiting_for_info, check Jira comments for invoice numbers
-        if (existing?.status === "waiting_for_info") {
-          console.log(`[${VERSION}] Task ${issueKey} is waiting_for_info — checking Jira comments for invoice number`);
-          const commentsText = await fetchJiraComments(settings, jiraAuth, issueKey);
-          // Look for invoice numbers in comments (exclude our own bot comments)
-          const invoicePattern = /(?:KXT|SP|kxt|sp)\d{6,12}/gi;
-          const commentInvoices = commentsText.match(invoicePattern);
-          if (commentInvoices && commentInvoices.length > 0) {
-            console.log(`[${VERSION}] Found invoice(s) in comments: ${commentInvoices.join(", ")}`);
-            combinedDescription = `${description}\n\nИз комментариев: номера накладных: ${commentInvoices.join(", ")}`;
-          } else {
-            console.log(`[${VERSION}] No invoice numbers found in comments for ${issueKey} — still waiting`);
-            await supabase
-              .from("processed_tasks")
-              .update({ status: "waiting_for_info", retry_count: (existing.retry_count || 0) + 1 })
-              .eq("id", taskId);
-            processedCount++;
-            continue;
-          }
-        }
 
         if (aiEnabled) {
-          aiResult = await parseWithAI(settings, summary, combinedDescription, supabase, taskId);
+          aiResult = await parseWithAI(settings, summary, description, supabase, taskId);
         }
 
         // Store first action for backward compat in DB column
@@ -216,20 +193,6 @@ serve(async (req) => {
           .eq("id", taskId);
 
         if (!aiResult.actions || aiResult.actions.length === 0) {
-          // Check if AI detected an action but no invoice (needs_invoice flag)
-          if (aiResult.needs_invoice) {
-            console.log(`[${VERSION}] Task ${issueKey}: action detected but no invoice — asking in Jira`);
-            await addJiraComment(settings, jiraAuth, issueKey,
-              `⚠️ Номер накладной не найден в текстовом формате. Пожалуйста, укажите номер накладной текстом в комментарии (например: SP00493934 или KXT110098207).`
-            );
-            await supabase
-              .from("processed_tasks")
-              .update({ status: "waiting_for_info", execution_result: { message: "Ожидание номера накладной — запрошено в комментарии" } })
-              .eq("id", taskId);
-            processedCount++;
-            continue;
-          }
-
           await supabase
             .from("processed_tasks")
             .update({ status: "ignored", execution_result: { message: "Заявка не содержит поддерживаемых действий" } })
@@ -335,40 +298,6 @@ serve(async (req) => {
             results.forEach((r: any) => {
               allCommentLines.push(r.success ? `✅ ${r.invoice}: тип перевозки изменён на ${typeLabel}` : `❌ ${r.invoice}: ${r.error}`);
             });
-          } else if (actionItem.action === "update_sender") {
-            const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
-            if (filteredInvoices.length === 0) {
-              console.log(`[${VERSION}] Skipping update_sender — all invoices will be cancelled`);
-              allCommentLines.push(`ℹ️ Обновление отправителя пропущено — заказ будет отменён`);
-              anySuccess = true;
-              continue;
-            }
-            const modifiedAction = { ...actionItem, invoices: filteredInvoices };
-            const results = await executeUpdateSender(supabase, settings, modifiedAction, taskId, dryRun);
-            allResults.push(...results);
-            const ok = results.every((r: any) => r.success);
-            if (!ok) allSuccess = false;
-            if (results.some((r: any) => r.success)) anySuccess = true;
-            results.forEach((r: any) => {
-              allCommentLines.push(r.success ? `✅ ${r.invoice}: данные отправителя обновлены` : `❌ ${r.invoice}: ${r.error}`);
-            });
-          } else if (actionItem.action === "change_sender_direction") {
-            const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
-            if (filteredInvoices.length === 0) {
-              console.log(`[${VERSION}] Skipping change_sender_direction — all invoices will be cancelled`);
-              allCommentLines.push(`ℹ️ Смена направления отправителя пропущена — заказ будет отменён`);
-              anySuccess = true;
-              continue;
-            }
-            const modifiedAction = { ...actionItem, invoices: filteredInvoices };
-            const results = await executeChangeSenderDirection(supabase, settings, modifiedAction, taskId, dryRun);
-            allResults.push(...results);
-            const ok = results.every((r: any) => r.success);
-            if (!ok) allSuccess = false;
-            if (results.some((r: any) => r.success)) anySuccess = true;
-            results.forEach((r: any) => {
-              allCommentLines.push(r.success ? `✅ ${r.invoice}: направление отправителя изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`);
-            });
           }
         }
 
@@ -457,8 +386,6 @@ async function parseWithAI(
 4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить тип оплаты
 5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — клиент просит сменить город доставки / направление (слова: "сменить направление", "изменить город доставки", "перенаправить в город ...")
 6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — клиент просит сменить тип перевозки: "стандарт" / "авто" → shipment_type: 1, "экспресс" / "авиа" → shipment_type: 2
-7. СМЕНА АДРЕСА/ДАННЫХ ОТПРАВИТЕЛЯ (action: "update_sender") — клиент просит изменить адрес, ФИО или телефон ОТПРАВИТЕЛЯ (слова: "изменить адрес отправителя", "сменить адрес забора", "изменить данные отправителя")
-8. СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ (action: "change_sender_direction") — клиент просит сменить город ОТПРАВИТЕЛЯ / город забора (слова: "сменить город отправителя", "сменить город забора")
 
 ⚠️ КРИТИЧЕСКИ ВАЖНЫЕ ОГРАНИЧЕНИЯ ДЛЯ ОТМЕНЫ:
 - "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. ИГНОРИРУЙ.
@@ -469,9 +396,10 @@ async function parseWithAI(
 Заявки которые нужно ИГНОРИРОВАТЬ:
 - "Убрать ДК", "снять ДК", "убрать доставку курьером" — НЕ отмена!
 - Смена типа доставки (курьерская → самовывоз и т.д.)
+- Смена адреса ЗАБОРА / данных ОТПРАВИТЕЛЯ
 - Вопросы о статусе, жалобы, возвраты, запросы информации
 
-ВАЖНО: Мы работаем с получателем И отправителем. Различай запросы про отправителя (update_sender, change_sender_direction) и получателя (update_receiver, change_direction).
+ВАЖНО: Мы работаем ТОЛЬКО с получателем. Запросы про отправителя — ИГНОРИРУЙ.
 
 ФОРМАТ ОТВЕТА — МАССИВ ДЕЙСТВИЙ:
 Верни JSON с массивом "actions". Каждое действие — отдельный объект.
@@ -486,7 +414,7 @@ async function parseWithAI(
       "action": "update_receiver",
       "invoices": ["SP00493934"],
       "address": {"city": null, "street": "Тайбурыл", "house": "23/1", "full_address": "ул. Тайбурыл, 23/1"},
-      "receiver": {"full_name": "Мейржан", "phone": "+77777777777", "entity": "Мейржан"}
+      "receiver": {"full_name": "Мейржан", "phone": "+77777777777"}
     },
     {
       "action": "cancel",
@@ -512,7 +440,7 @@ async function parseWithAI(
       "action": "update_receiver",
       "invoices": ["KXT110098207"],
       "address": {"city": "Алматы", "street": "Алтын Алма", "house": "151", "full_address": "Казахстан, г. Алматы, ул. Алтын Алма, 151"},
-      "receiver": {"full_name": "ИВАНОВ ИВАН", "phone": "+77001234567", "entity": "ИВАНОВ ИВАН"}
+      "receiver": {"full_name": "ИВАНОВ ИВАН", "phone": "+77001234567"}
     }
   ]
 }
@@ -587,53 +515,6 @@ async function parseWithAI(
 - Слова "стандарт", "авто", "автоперевозка", "наземная" → shipment_type: 1
 - Слова "экспресс", "авиа", "авиаперевозка", "срочная" → shipment_type: 2
 
-Пример СМЕНА АДРЕСА ОТПРАВИТЕЛЯ:
-Текст: "Прошу изменить адрес отправителя на ул. Бекболата, 2/2"
-{
-  "actions": [
-    {
-      "action": "update_sender",
-      "invoices": ["SP00493934"],
-      "address": {"city": null, "street": "Бекболата", "house": "2/2", "full_address": "ул. Бекболата, 2/2"},
-      "sender": null
-    }
-  ]
-}
-
-Пример СМЕНА ДАННЫХ ОТПРАВИТЕЛЯ:
-Текст: "Изменить ФИО отправителя на Иванов Иван, тел: 87771234567"
-{
-  "actions": [
-    {
-      "action": "update_sender",
-      "invoices": ["SP00493934"],
-      "address": null,
-      "sender": {"full_name": "Иванов Иван", "phone": "+77771234567", "entity": "Иванов Иван"}
-    }
-  ]
-}
-
-Пример СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ:
-Текст: "Сменить город забора на Астану" или "Изменить город отправителя на Караганду"
-{
-  "actions": [
-    {
-      "action": "change_sender_direction",
-      "invoices": ["SP00493934"],
-      "city": "Астана"
-    }
-  ]
-}
-
-Правила для update_sender:
-- Аналогично update_receiver, но для ОТПРАВИТЕЛЯ
-- Слова "отправитель", "забор", "адрес забора", "данные отправителя" → update_sender
-- Формат address и sender такой же как у update_receiver
-
-Правила для change_sender_direction:
-- Аналогично change_direction, но для ОТПРАВИТЕЛЯ
-- Слова "город отправителя", "город забора", "сменить город отправки" → change_sender_direction
-
 Правила для payment:
 - payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — ставь 2.
 - payment_method: 4 = наличка, 2 = платежи/безнал.
@@ -641,13 +522,10 @@ async function parseWithAI(
 
 Важные правила:
 - НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры (KXT110098207, SP00493507...).
-- Если НЕТ номера накладной НО есть действие (клиент описывает что хочет сделать) — верни {"actions": [], "needs_invoice": true, "detected_action": "<название_действия>"}.
-- Если НЕТ номера накладной И нет действия — верни {"actions": []}.
+- Если НЕТ номера накладной — верни {"actions": []}.
 - Если просят сменить ТОЛЬКО ФИО/телефон — НЕ включай "address", только "receiver".
 - Если просят сменить ТОЛЬКО адрес — НЕ включай "receiver", только "address".
 - Если просят и адрес, и ФИО/телефон — включи оба в ОДНОМ update_receiver.
-- Поле "entity" — это название организации/компании (например "ТОО Клиника Хадиша", "ИП Рахмет"). Если в тексте упоминается название организации — ОБЯЗАТЕЛЬНО включи его в receiver/sender как "entity".
-- При изменении данных получателя/отправителя — ВСЕГДА копируй entity из текста заявки. Если entity указан — ставь его И в full_name, И в entity.
 - Телефон КОПИРУЙ ТОЧНО. Только замени первую 8 на +7 (87773954884 → +77773954884).
 - ГОРОД: Если не указан явно — city: null. НЕ УГАДЫВАЙ из названия улицы.
 - full_address: без города → "ул. {улица}, {дом}". С городом → "Казахстан, г. {город}, ул. {улица}, {дом}".
@@ -717,45 +595,6 @@ async function parseWithAI(
 }
 
 // ---- Jira Helpers ----
-
-async function fetchJiraComments(settings: Record<string, string>, auth: string, issueKey: string): Promise<string> {
-  try {
-    const baseUrl = settings.jira_base_url.replace(/\/+$/, "");
-    const resp = await fetch(`${baseUrl}/rest/api/3/issue/${issueKey}/comment`, {
-      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-    });
-    if (!resp.ok) {
-      console.error(`[${VERSION}] Failed to fetch comments for ${issueKey}: ${resp.status}`);
-      return "";
-    }
-    const data = await resp.json();
-    const comments = data.comments || [];
-    // Extract text from ADF comments, skip bot comments (containing ✅ or ❌ or ⚠️)
-    const extractTextFromADF = (node: any): string => {
-      if (!node) return "";
-      if (typeof node === "string") return node;
-      if (node.type === "text") return node.text || "";
-      if (node.content && Array.isArray(node.content)) {
-        return node.content.map(extractTextFromADF).join("");
-      }
-      return "";
-    };
-    const commentTexts: string[] = [];
-    for (const comment of comments) {
-      const body = comment.body;
-      const text = typeof body === "string" ? body : (body?.content ? body.content.map(extractTextFromADF).join("\n") : "");
-      // Skip our own bot comments
-      if (text.includes("✅") || text.includes("❌") || text.includes("⚠️") || text.includes("Результат обработки")) continue;
-      commentTexts.push(text);
-    }
-    const result = commentTexts.join("\n");
-    console.log(`[${VERSION}] Fetched ${comments.length} comments for ${issueKey}, extracted ${commentTexts.length} non-bot texts (${result.length} chars)`);
-    return result;
-  } catch (e: any) {
-    console.error(`[${VERSION}] Failed to fetch Jira comments:`, e);
-    return "";
-  }
-}
 
 async function addJiraComment(settings: Record<string, string>, auth: string, issueKey: string, body: string) {
   try {
@@ -1066,20 +905,10 @@ async function executeUpdateReceiver(
       if (newReceiver) {
         if (newReceiver.full_name) {
           beforeState.full_name = receiver.full_name;
-          beforeState.entity = receiver.entity;
           updatePayload.full_name = newReceiver.full_name;
+          // Also update title to match full_name (required field)
           updatePayload.title = newReceiver.full_name;
-          updatePayload.entity = newReceiver.entity || newReceiver.full_name;
           afterState.full_name = newReceiver.full_name;
-          afterState.entity = updatePayload.entity;
-        }
-        if (newReceiver.entity && !newReceiver.full_name) {
-          beforeState.entity = receiver.entity;
-          updatePayload.entity = newReceiver.entity;
-          updatePayload.title = newReceiver.entity;
-          updatePayload.full_name = newReceiver.entity;
-          afterState.entity = newReceiver.entity;
-          afterState.full_name = newReceiver.entity;
         }
         if (newReceiver.phone) {
           beforeState.phone = receiver.phone;
@@ -1725,548 +1554,6 @@ async function executeChangeShipmentType(
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_shipment_type", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
-      });
-      results.push({ invoice, success: false, error: e.message });
-    }
-  }
-  return results;
-}
-
-// ---- Helper: Parse status history from invoice-status response ----
-
-function parseStatusHistory(statusData: any): any[] {
-  if (Array.isArray(statusData)) return statusData;
-  if (statusData && typeof statusData === "object") {
-    if (Array.isArray(statusData.data?.status_history)) return statusData.data.status_history;
-    if (Array.isArray(statusData.data)) return statusData.data;
-    if (Array.isArray(statusData.statuses)) return statusData.statuses;
-    if (Array.isArray(statusData.status_history)) return statusData.status_history;
-    if (Array.isArray(statusData.result)) return statusData.result;
-    return [statusData];
-  }
-  return [];
-}
-
-// ---- Helper: Check sender status (225 "Обработка груза на складе" must be "waiting") ----
-
-async function checkSenderStatusAllowed(invoice: string, sparkToken: string, supabase: any, taskId: string, actionName: string): Promise<{ allowed: boolean; error?: string }> {
-  const statusResp = await fetch(
-    `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
-  );
-  if (!statusResp.ok) {
-    return { allowed: false, error: `Status check failed: ${statusResp.status}` };
-  }
-  const statusData = await statusResp.json();
-  console.log(`[${VERSION}] Invoice ${invoice} status for ${actionName}:`, JSON.stringify(statusData).substring(0, 500));
-
-  const statuses = parseStatusHistory(statusData);
-
-  const processingStatus = statuses.find((s: any) => s.status_code === 225 || s.status_name === "Обработка груза на складе");
-  
-  if (processingStatus && processingStatus.state === "completed") {
-    const errorMsg = `Статус "Обработка груза на складе" (225) уже завершён — изменение отправителя невозможно`;
-    console.log(`[${VERSION}] Invoice ${invoice}: ${errorMsg}`);
-    await supabase.from("execution_logs").insert({
-      task_id: taskId, action: actionName, step: "status_check",
-      request_data: { invoice },
-      response_data: { status: processingStatus },
-      success: false, error_message: errorMsg,
-    });
-    return { allowed: false, error: errorMsg };
-  }
-
-  await supabase.from("execution_logs").insert({
-    task_id: taskId, action: actionName, step: "status_check",
-    request_data: { invoice },
-    response_data: { processing_status: processingStatus || "not_found", passed: true }, success: true,
-  });
-  return { allowed: true };
-}
-
-// ---- Update Sender (address + name + phone) ----
-
-async function executeUpdateSender(
-  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
-) {
-  const results = [];
-  const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
-  const sparkToken = settings.spark_bearer_token;
-  const invoices = aiResult.invoices || [];
-  const newAddress = aiResult.address;
-  const newSender = aiResult.sender;
-
-  for (const invoice of invoices) {
-    try {
-      // 1. Status check
-      const statusCheck = await checkSenderStatusAllowed(invoice, sparkToken, supabase, taskId, "update_sender");
-      if (!statusCheck.allowed) {
-        results.push({ invoice, success: false, error: statusCheck.error });
-        continue;
-      }
-
-      // 2. Search for invoice to get logistics-info
-      const searchResp = await fetch(
-        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
-      );
-      if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
-      const searchData = await searchResp.json();
-      const items = searchData.data || searchData.items || searchData || [];
-      const item = Array.isArray(items) ? items[0] : items;
-      if (!item?.id) throw new Error("Invoice not found");
-
-      // Use order_id for sender endpoint (not id which is for накладная)
-      const orderId = item.order_id;
-      if (!orderId) throw new Error("order_id not found in logistics-info search result");
-
-      // 3. GET full logistics-info for sender data
-      const fullResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}`,
-        { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
-      );
-      if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
-      const fullData = await fullResp.json();
-      const logisticsInfo = fullData.data || fullData;
-      const sender = logisticsInfo.sender || {};
-      if (!sender?.id) throw new Error("Sender not found in logistics-info");
-
-      const senderCity = sender.city?.name || sender.city || "";
-      console.log(`[${VERSION}] Sender: id=${sender.id}, order_id=${orderId}, city="${senderCity}", title="${sender.title}", phone="${sender.phone}"`);
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_sender", step: "get_sender_info",
-        request_data: { invoice, logistics_info_id: item.id, order_id: orderId },
-        response_data: { sender_id: sender.id, city: senderCity, title: sender.title, full_name: sender.full_name, phone: sender.phone },
-        success: true,
-      });
-
-      // 4. Build update payload — preserve all existing sender fields
-      // Extract city_id properly (may be nested object)
-      const senderCityId = typeof sender.city_id === 'number' ? sender.city_id 
-        : (sender.city?.id ? Number(sender.city.id) : Number(sender.city_id));
-      
-      const updatePayload: any = {
-        title: sender.title,
-        entity: sender.entity || sender.title,
-        full_name: sender.full_name,
-        phone: sender.phone,
-        additional_phone: sender.additional_phone || null,
-        city_id: senderCityId,
-        latitude: sender.latitude != null ? Number(sender.latitude) : null,
-        longitude: sender.longitude != null ? Number(sender.longitude) : null,
-        street: sender.street || "",
-        house: sender.house || "",
-        full_address: sender.full_address || "",
-        comment: sender.comment || null,
-        office: sender.office || null,
-        company_id: sender.company_id || null,
-        id: sender.id,
-        warehouse_id: null, // ALWAYS null per requirement
-      };
-      if (sender.index) {
-        updatePayload.index = String(sender.index).substring(0, 10);
-      } else {
-        updatePayload.index = null;
-      }
-
-      // If existing lat/lng are null, geocode using existing address to get coordinates
-      if (updatePayload.latitude == null || updatePayload.longitude == null) {
-        const yandexApiKey = settings.yandex_geocoder_api_key;
-        if (yandexApiKey && (sender.street || sender.full_address)) {
-          const existingGeoQuery = `${senderCity}, ${sender.street || ""} ${sender.house || ""}`.trim();
-          console.log(`[${VERSION}] Geocoding existing sender address (lat/lng were null): "${existingGeoQuery}"`);
-          try {
-            const geoResp = await fetch(
-              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(existingGeoQuery)}`
-            );
-            const geoData = await geoResp.json();
-            const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-            const pos = geoMember?.Point?.pos;
-            if (pos) {
-              const [lon, lat] = pos.split(" ").map(Number);
-              updatePayload.latitude = lat;
-              updatePayload.longitude = lon;
-              console.log(`[${VERSION}] Resolved existing sender coords: lat=${lat}, lng=${lon}`);
-            }
-          } catch (geoErr: any) {
-            console.warn(`[${VERSION}] Geocoding existing sender address failed: ${geoErr.message}`);
-          }
-        }
-      }
-
-      const beforeState: any = {};
-      const afterState: any = {};
-
-      // 5. Handle address change
-      if (newAddress) {
-        const requestedCity = newAddress.city || null;
-        const effectiveCity = requestedCity || senderCity;
-
-        if (requestedCity && senderCity && requestedCity.toLowerCase() !== senderCity.toLowerCase()) {
-          const error = `Город не совпадает: запрос="${requestedCity}" vs отправитель="${senderCity}". Обновление отклонено.`;
-          await supabase.from("execution_logs").insert({
-            task_id: taskId, action: "update_sender", step: "city_check",
-            success: false, error_message: error,
-          });
-          results.push({ invoice, success: false, error });
-          continue;
-        }
-
-        const yandexApiKey = settings.yandex_geocoder_api_key;
-        if (!yandexApiKey) throw new Error("Yandex Geocoder API key not configured");
-
-        const geoQuery = `${effectiveCity}, ${newAddress.street} ${newAddress.house}`;
-        const geoResp = await fetch(
-          `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
-        );
-        const geoData = await geoResp.json();
-        const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-        const pos = geoMember?.Point?.pos;
-        if (pos) {
-          const [lon, lat] = pos.split(" ").map(Number);
-          updatePayload.latitude = lat;
-          updatePayload.longitude = lon;
-        }
-
-        await supabase.from("execution_logs").insert({
-          task_id: taskId, action: "update_sender", step: "geocoding_yandex",
-          request_data: { query: geoQuery },
-          response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
-          success: !!geoMember,
-        });
-
-        beforeState.street = sender.street;
-        beforeState.house = sender.house;
-        beforeState.full_address = sender.full_address;
-        updatePayload.street = newAddress.street;
-        updatePayload.house = newAddress.house;
-        updatePayload.full_address = newAddress.full_address;
-        afterState.street = newAddress.street;
-        afterState.house = newAddress.house;
-        afterState.full_address = newAddress.full_address;
-      }
-
-      // 6. Handle name/phone change
-      if (newSender) {
-        if (newSender.full_name) {
-          beforeState.full_name = sender.full_name;
-          beforeState.entity = sender.entity;
-          updatePayload.full_name = newSender.full_name;
-          updatePayload.title = newSender.full_name;
-          updatePayload.entity = newSender.entity || newSender.full_name;
-          afterState.full_name = newSender.full_name;
-          afterState.entity = updatePayload.entity;
-        }
-        if (newSender.entity && !newSender.full_name) {
-          beforeState.entity = sender.entity;
-          updatePayload.entity = newSender.entity;
-          updatePayload.title = newSender.entity;
-          updatePayload.full_name = newSender.entity;
-          afterState.entity = newSender.entity;
-          afterState.full_name = newSender.entity;
-        }
-        if (newSender.phone) {
-          beforeState.phone = sender.phone;
-          const normalizedPhone = normalizePhone(newSender.phone);
-          updatePayload.phone = normalizedPhone;
-          afterState.phone = normalizedPhone;
-        }
-      }
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_sender", step: "before_after",
-        request_data: { before: beforeState },
-        response_data: { after: afterState }, success: true,
-      });
-
-      if (dryRun) {
-        results.push({ invoice, success: true, dry_run: true, before: beforeState, after: afterState });
-        continue;
-      }
-
-      // 7. PUT to /senders/{order_id}
-      console.log(`[${VERSION}] PUT /senders/${orderId} payload:`, JSON.stringify(updatePayload));
-      const updateResp = await fetch(`${sparkUrl}/senders/${orderId}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(updatePayload),
-      });
-
-      if (!updateResp.ok) {
-        const errBody = await updateResp.text().catch(() => "");
-        throw new Error(`Update sender failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
-      }
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_sender", step: "update_sender_api",
-        request_data: { order_id: orderId },
-        response_data: { status: updateResp.status }, success: true,
-      });
-
-      results.push({ invoice, success: true, changes: afterState });
-    } catch (e: any) {
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_sender", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
-      });
-      results.push({ invoice, success: false, error: e.message });
-    }
-  }
-  return results;
-}
-
-// ---- Change Sender Direction (city_id update on sender) ----
-
-async function executeChangeSenderDirection(
-  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
-) {
-  const results = [];
-  const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
-  const sparkToken = settings.spark_bearer_token;
-  const invoices = aiResult.invoices || [];
-  let targetCity = aiResult.city;
-
-  if (!targetCity) {
-    return [{ invoice: "N/A", success: false, error: "Город отправителя не указан" }];
-  }
-
-  // Parse city pairs
-  const separators = [" - ", " – ", " — ", "-"];
-  for (const sep of separators) {
-    if (targetCity.includes(sep)) {
-      const parts = targetCity.split(sep).map((p: string) => p.trim()).filter(Boolean);
-      if (parts.length >= 2) {
-        console.log(`[${VERSION}] Sender city pair: "${targetCity}" → taking: "${parts[parts.length - 1]}"`);
-        targetCity = parts[parts.length - 1];
-      }
-      break;
-    }
-  }
-
-  // Fuzzy city lookup
-  const { data: allCities } = await supabase.from("spark_cities").select("id, name");
-  if (!allCities || allCities.length === 0) {
-    return invoices.map((inv: string) => ({ invoice: inv, success: false, error: "Справочник городов пуст" }));
-  }
-
-  const normalize = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/[\s-]+/g, " ").trim();
-  const normalizedTarget = normalize(targetCity);
-
-  function levenshtein(a: string, b: string): number {
-    const m = a.length, n = b.length;
-    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-    for (let i = 1; i <= m; i++)
-      for (let j = 1; j <= n; j++)
-        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
-    return dp[m][n];
-  }
-
-  let bestMatch: any = null;
-  let bestScore = Infinity;
-  for (const city of allCities) {
-    const normalizedName = normalize(city.name);
-    if (normalizedName === normalizedTarget) { bestMatch = city; bestScore = 0; break; }
-    const dist = levenshtein(normalizedTarget, normalizedName);
-    const maxLen = Math.max(normalizedTarget.length, normalizedName.length);
-    const similarity = 1 - dist / maxLen;
-    if (similarity > 0.6 && dist < bestScore) { bestScore = dist; bestMatch = city; }
-  }
-
-  if (!bestMatch) {
-    await supabase.from("execution_logs").insert({
-      task_id: taskId, action: "change_sender_direction", step: "city_lookup",
-      success: false, error_message: `Город "${targetCity}" не найден в справочнике`,
-    });
-    return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${targetCity}" не найден` }));
-  }
-
-  const cityId = bestMatch.id;
-  const cityName = bestMatch.name;
-  console.log(`[${VERSION}] Sender city match: "${targetCity}" → id=${cityId}, name="${cityName}"`);
-
-  await supabase.from("execution_logs").insert({
-    task_id: taskId, action: "change_sender_direction", step: "city_lookup",
-    request_data: { requested_city: targetCity },
-    response_data: { city_id: cityId, city_name: cityName }, success: true,
-  });
-
-  for (const invoice of invoices) {
-    try {
-      // 1. Status check (225 must be "waiting")
-      const statusCheck = await checkSenderStatusAllowed(invoice, sparkToken, supabase, taskId, "change_sender_direction");
-      if (!statusCheck.allowed) {
-        results.push({ invoice, success: false, error: statusCheck.error });
-        continue;
-      }
-
-      // 2. Search for invoice
-      const searchResp = await fetch(
-        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
-      );
-      if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
-      const searchData = await searchResp.json();
-      const items = searchData.data || searchData.items || searchData || [];
-      const item = Array.isArray(items) ? items[0] : items;
-      if (!item?.id) throw new Error("Invoice not found");
-
-      const orderId = item.order_id;
-      if (!orderId) throw new Error("order_id not found in logistics-info");
-
-      // 3. GET full logistics-info for sender data
-      const fullResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}`,
-        { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
-      );
-      if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
-      const fullData = await fullResp.json();
-      const logisticsInfo = fullData.data || fullData;
-      const sender = logisticsInfo.sender || {};
-      if (!sender?.id) throw new Error("Sender not found in logistics-info");
-
-      // 4. Geocode sender address in new city
-      const stripCityFromAddress = (addr: string): string => {
-        if (!addr) return addr;
-        const cityPattern = /^(?:г\.?\s*)?[А-Яа-яЁёA-Za-z\-]+\s*,\s*/;
-        const match = addr.match(cityPattern);
-        if (match) {
-          const extracted = match[0].replace(/^г\.?\s*/, "").replace(/\s*,\s*$/, "").trim();
-          const normalizedExtracted = extracted.toLowerCase().replace(/ё/g, "е");
-          const isCity = allCities?.some((c: any) => {
-            const norm = c.name.toLowerCase().replace(/ё/g, "е");
-            return norm === normalizedExtracted || normalizedExtracted.includes(norm) || norm.includes(normalizedExtracted);
-          });
-          if (isCity) return addr.slice(match[0].length).trim();
-        }
-        return addr;
-      };
-
-      // Use new address from AI result if provided, otherwise use existing sender address
-      const newAddress = aiResult.address;
-      const newSenderData = aiResult.sender;
-      let currentStreet = newAddress?.street || stripCityFromAddress(sender.street || "");
-      const currentHouse = newAddress?.house || sender.house || "";
-      let newFullAddress = newAddress?.full_address || stripCityFromAddress(sender.full_address || "");
-      let newLatitude = sender.latitude != null ? Number(sender.latitude) : null;
-      let newLongitude = sender.longitude != null ? Number(sender.longitude) : null;
-
-      // Always geocode in the new city context
-      const yandexApiKey = settings.yandex_geocoder_api_key;
-      if (yandexApiKey && (currentStreet || currentHouse)) {
-        const geoQuery = `${cityName}, ${currentStreet} ${currentHouse}`.trim();
-        console.log(`[${VERSION}] Geocoding sender in new city: "${geoQuery}"`);
-        try {
-          const geoResp = await fetch(
-            `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
-          );
-          const geoData = await geoResp.json();
-          const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-          const pos = geoMember?.Point?.pos;
-          if (pos) {
-            const [lon, lat] = pos.split(" ").map(Number);
-            newLatitude = lat;
-            newLongitude = lon;
-            const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
-            if (formattedAddr) newFullAddress = formattedAddr;
-          }
-          await supabase.from("execution_logs").insert({
-            task_id: taskId, action: "change_sender_direction", step: "geocoding_new_city",
-            request_data: { query: geoQuery },
-            response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
-            success: !!geoMember,
-          });
-        } catch (geoErr: any) {
-          console.warn(`[${VERSION}] Sender geocoding failed: ${geoErr.message}`);
-        }
-      }
-
-      // Fallback: if lat/lng still null, use city center coordinates
-      if (newLatitude == null || newLongitude == null) {
-        console.warn(`[${VERSION}] WARNING: lat/lng still null after geocoding, attempting city-level geocode`);
-        if (yandexApiKey) {
-          try {
-            const cityGeoResp = await fetch(
-              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(cityName)}`
-            );
-            const cityGeoData = await cityGeoResp.json();
-            const cityGeoMember = cityGeoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-            const cityPos = cityGeoMember?.Point?.pos;
-            if (cityPos) {
-              const [lon, lat] = cityPos.split(" ").map(Number);
-              newLatitude = lat;
-              newLongitude = lon;
-              console.log(`[${VERSION}] Using city center coords: lat=${lat}, lng=${lon}`);
-            }
-          } catch (_) {}
-        }
-      }
-
-      // 5. Build PUT payload
-      const senderTitle = newSenderData?.full_name || sender.title;
-      const senderEntity = newSenderData?.entity || newSenderData?.full_name || sender.entity || sender.title;
-      const senderFullName = newSenderData?.full_name || sender.full_name;
-      const senderPhone = newSenderData?.phone ? normalizePhone(newSenderData.phone) : sender.phone;
-      const senderAdditionalPhone = newSenderData?.additional_phone ? normalizePhone(newSenderData.additional_phone) : (sender.additional_phone || null);
-
-      const updatePayload: any = {
-        title: senderTitle,
-        entity: senderEntity,
-        full_name: senderFullName,
-        phone: senderPhone,
-        additional_phone: senderAdditionalPhone,
-        city_id: Number(cityId),
-        latitude: newLatitude,
-        longitude: newLongitude,
-        street: currentStreet,
-        house: currentHouse,
-        full_address: newFullAddress,
-        comment: sender.comment || null,
-        office: sender.office || null,
-        index: sender.index ? String(sender.index).substring(0, 10) : null,
-        company_id: sender.company_id || null,
-        id: sender.id,
-        warehouse_id: null, // ALWAYS null
-      };
-
-      const beforeCity = sender.city?.name || sender.city_id;
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_sender_direction", step: "before_after",
-        request_data: { before_city: beforeCity, before_city_id: sender.city_id },
-        response_data: { after_city: cityName, after_city_id: cityId, after_address: newFullAddress }, success: true,
-      });
-
-      if (dryRun) {
-        results.push({ invoice, success: true, dry_run: true, city: cityName, before_city: beforeCity });
-        continue;
-      }
-
-      // 6. PUT to /senders/{order_id}
-      console.log(`[${VERSION}] PUT /senders/${orderId} sender direction: city_id=${cityId} (${cityName})`);
-      const updateResp = await fetch(`${sparkUrl}/senders/${orderId}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(updatePayload),
-      });
-
-      if (!updateResp.ok) {
-        const errBody = await updateResp.text().catch(() => "");
-        throw new Error(`Update sender direction failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
-      }
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_sender_direction", step: "update_sender_direction_api",
-        request_data: { order_id: orderId, new_city_id: cityId },
-        response_data: { status: updateResp.status }, success: true,
-      });
-
-      results.push({ invoice, success: true, city: cityName });
-    } catch (e: any) {
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_sender_direction", step: "error",
         success: false, error_message: e.message, request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
