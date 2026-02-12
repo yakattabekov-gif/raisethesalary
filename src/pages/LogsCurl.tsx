@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Eye, Globe } from "lucide-react";
 import { format } from "date-fns";
+import { motion } from "framer-motion";
 
 interface CurlLog {
   id: string;
@@ -30,7 +31,7 @@ const useCurlLogs = () => {
       if (error) throw error;
       return data as CurlLog[];
     },
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
 };
 
@@ -39,15 +40,24 @@ const LogsCurl = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <Globe className="w-5 h-5 text-primary" />
-          <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Логи запросов</h1>
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-2xl bg-accent/15 flex items-center justify-center">
+            <Globe className="w-5 h-5 text-accent" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Логи запросов</h1>
+            <p className="text-[11px] text-muted-foreground">HTTP-запросы к внешним API (Spark, Jira, Yandex)</p>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground">HTTP-запросы к внешним API (Spark, Jira, Yandex)</p>
-      </div>
+      </motion.div>
 
-      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+        className="glass rounded-[24px] overflow-hidden"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -72,38 +82,36 @@ const LogsCurl = () => {
                     ? <span className="pill-success">OK</span>
                     : <span className="pill-error">FAIL</span>}
                 </td>
-                <td className="text-sm text-destructive truncate max-w-[200px]">
-                  {log.error_message || "—"}
-                </td>
+                <td className="text-sm text-destructive truncate max-w-[200px]">{log.error_message || "—"}</td>
                 <td>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <button className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                      <button className="p-2 rounded-full hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
                         <Eye className="w-4 h-4" />
                       </button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-3xl">
+                    <DialogContent className="max-w-3xl glass-thick border-0">
                       <DialogHeader>
-                        <DialogTitle className="text-sm font-semibold">{log.action} → {log.step}</DialogTitle>
+                        <DialogTitle className="text-sm font-semibold text-foreground">{log.action} → {log.step}</DialogTitle>
                       </DialogHeader>
                       <ScrollArea className="max-h-[70vh]">
                         <div className="space-y-4 text-sm">
                           <div>
-                            <p className="text-xs text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Request</p>
-                            <pre className="bg-muted rounded-xl p-4 text-xs overflow-auto text-foreground whitespace-pre-wrap">
+                            <p className="text-[11px] text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Request</p>
+                            <pre className="bg-muted/20 rounded-2xl p-4 text-xs overflow-auto text-foreground whitespace-pre-wrap">
                               {log.request_data ? JSON.stringify(log.request_data, null, 2) : "Нет данных"}
                             </pre>
                           </div>
                           <div>
-                            <p className="text-xs text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Response</p>
-                            <pre className="bg-muted rounded-xl p-4 text-xs overflow-auto text-foreground whitespace-pre-wrap">
+                            <p className="text-[11px] text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Response</p>
+                            <pre className="bg-muted/20 rounded-2xl p-4 text-xs overflow-auto text-foreground whitespace-pre-wrap">
                               {log.response_data ? JSON.stringify(log.response_data, null, 2) : "Нет данных"}
                             </pre>
                           </div>
                           {log.error_message && (
                             <div>
-                              <p className="text-xs text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Ошибка</p>
-                              <p className="text-destructive text-sm bg-destructive/5 p-3 rounded-xl">{log.error_message}</p>
+                              <p className="text-[11px] text-muted-foreground font-semibold mb-2 uppercase tracking-wider">Ошибка</p>
+                              <p className="text-destructive text-sm bg-destructive/10 p-4 rounded-2xl">{log.error_message}</p>
                             </div>
                           )}
                         </div>
@@ -121,7 +129,7 @@ const LogsCurl = () => {
             )}
           </tbody>
         </table>
-      </div>
+      </motion.div>
     </div>
   );
 };

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,50 +6,57 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 220 14% 10%;
+    --background: 240 15% 6%;
+    --foreground: 0 0% 95%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 220 14% 10%;
+    --card: 240 12% 12%;
+    --card-foreground: 0 0% 95%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 14% 10%;
+    --popover: 240 12% 14%;
+    --popover-foreground: 0 0% 95%;
 
-    --primary: 239 84% 67%;
+    --primary: 250 80% 65%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 14% 40%;
+    --secondary: 240 10% 16%;
+    --secondary-foreground: 240 5% 70%;
 
-    --muted: 220 14% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 240 10% 18%;
+    --muted-foreground: 240 5% 55%;
 
-    --accent: 220 14% 96%;
-    --accent-foreground: 220 14% 10%;
+    --accent: 280 60% 55%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --warning: 38 92% 50%;
+    --warning: 38 92% 55%;
     --warning-foreground: 0 0% 100%;
 
-    --success: 142 71% 45%;
+    --success: 155 70% 50%;
     --success-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 239 84% 67%;
+    --border: 240 10% 20%;
+    --input: 240 10% 20%;
+    --ring: 250 80% 65%;
 
-    --radius: 0.75rem;
+    --radius: 1.25rem;
 
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 215 16% 47%;
-    --sidebar-primary: 239 84% 67%;
+    --glass-bg: 240 12% 12% / 0.6;
+    --glass-border: 0 0% 100% / 0.08;
+    --glass-highlight: 0 0% 100% / 0.05;
+    --glow-primary: 250 80% 65%;
+    --glow-accent: 280 60% 55%;
+    --glow-success: 155 70% 50%;
+
+    --sidebar-background: 240 12% 10%;
+    --sidebar-foreground: 240 5% 55%;
+    --sidebar-primary: 250 80% 65%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 14% 96%;
-    --sidebar-accent-foreground: 220 14% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 239 84% 67%;
+    --sidebar-accent: 240 10% 16%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 240 10% 20%;
+    --sidebar-ring: 250 80% 65%;
   }
 }
 
@@ -60,68 +67,143 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+    overflow-x: hidden;
   }
 }
 
+/* Spatial background */
+.spatial-bg {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, hsl(250 80% 30% / 0.25), transparent),
+    radial-gradient(ellipse 70% 50% at 80% 80%, hsl(280 60% 25% / 0.2), transparent),
+    radial-gradient(ellipse 50% 40% at 50% 50%, hsl(200 50% 20% / 0.15), transparent),
+    hsl(240 15% 6%);
+  min-height: 100vh;
+}
+
+/* Glassmorphism */
 @layer components {
-  /* Status pills */
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(40px) saturate(1.5);
+    -webkit-backdrop-filter: blur(40px) saturate(1.5);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow:
+      0 8px 32px hsl(240 20% 4% / 0.4),
+      inset 0 1px 0 hsl(var(--glass-highlight));
+  }
+
+  .glass-thick {
+    background: hsl(240 12% 14% / 0.7);
+    backdrop-filter: blur(60px) saturate(1.8);
+    -webkit-backdrop-filter: blur(60px) saturate(1.8);
+    border: 1px solid hsl(0 0% 100% / 0.1);
+    box-shadow:
+      0 16px 64px hsl(240 20% 4% / 0.5),
+      0 4px 16px hsl(240 20% 4% / 0.3),
+      inset 0 1px 0 hsl(0 0% 100% / 0.06);
+  }
+
+  .glass-dock {
+    background: hsl(240 12% 10% / 0.75);
+    backdrop-filter: blur(50px) saturate(2);
+    -webkit-backdrop-filter: blur(50px) saturate(2);
+    border: 1px solid hsl(0 0% 100% / 0.12);
+    box-shadow:
+      0 20px 60px hsl(240 20% 4% / 0.6),
+      0 8px 24px hsl(240 20% 4% / 0.4),
+      inset 0 1px 0 hsl(0 0% 100% / 0.08);
+  }
+
+  .glow-primary {
+    box-shadow:
+      0 0 20px hsl(var(--glow-primary) / 0.15),
+      0 0 60px hsl(var(--glow-primary) / 0.08);
+  }
+
+  .glow-success {
+    box-shadow:
+      0 0 20px hsl(var(--glow-success) / 0.2),
+      0 0 60px hsl(var(--glow-success) / 0.1);
+  }
+
+  .glow-accent {
+    box-shadow:
+      0 0 20px hsl(var(--glow-accent) / 0.15),
+      0 0 60px hsl(var(--glow-accent) / 0.08);
+  }
+
+  .input-glass {
+    @apply bg-transparent rounded-2xl px-4 py-3 text-sm transition-all duration-300;
+    background: hsl(240 10% 14% / 0.5);
+    border: 1px solid hsl(0 0% 100% / 0.06);
+  }
+  .input-glass:focus {
+    border-color: hsl(var(--primary) / 0.5);
+    box-shadow:
+      0 0 0 3px hsl(var(--primary) / 0.1),
+      inset 0 0 20px hsl(var(--primary) / 0.05);
+    outline: none;
+  }
+
+  /* Status pills - spatial */
   .pill {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold;
   }
   .pill-success {
     @apply pill;
-    background: hsl(142 71% 45% / 0.1);
-    color: hsl(142 71% 35%);
+    background: hsl(155 70% 50% / 0.15);
+    color: hsl(155 70% 65%);
+    border: 1px solid hsl(155 70% 50% / 0.2);
   }
   .pill-error {
     @apply pill;
-    background: hsl(0 72% 51% / 0.1);
-    color: hsl(0 72% 41%);
+    background: hsl(0 72% 55% / 0.15);
+    color: hsl(0 72% 70%);
+    border: 1px solid hsl(0 72% 55% / 0.2);
   }
   .pill-warning {
     @apply pill;
-    background: hsl(38 92% 50% / 0.1);
-    color: hsl(38 92% 35%);
+    background: hsl(38 92% 55% / 0.15);
+    color: hsl(38 92% 70%);
+    border: 1px solid hsl(38 92% 55% / 0.2);
   }
   .pill-idle {
-    @apply pill bg-muted text-muted-foreground;
+    @apply pill;
+    background: hsl(240 10% 30% / 0.3);
+    color: hsl(240 5% 55%);
+    border: 1px solid hsl(0 0% 100% / 0.06);
   }
 
-  /* Status dots */
-  .status-dot {
-    @apply w-1.5 h-1.5 rounded-full inline-block;
-  }
-  .status-dot-success {
-    @apply status-dot;
-    background: hsl(142 71% 45%);
-  }
-  .status-dot-error {
-    @apply status-dot;
-    background: hsl(0 72% 51%);
-  }
-  .status-dot-warning {
-    @apply status-dot;
-    background: hsl(38 92% 50%);
-  }
-  .status-dot-idle {
-    @apply status-dot bg-muted-foreground/40;
-  }
-
-  /* Clean data table */
+  /* Data table - spatial */
   .data-table {
     @apply w-full text-sm;
   }
   .data-table thead tr {
-    @apply border-b border-border;
+    border-bottom: 1px solid hsl(0 0% 100% / 0.06);
   }
   .data-table th {
-    @apply text-left px-4 py-3 text-xs font-medium text-muted-foreground;
+    @apply text-left px-5 py-4 text-xs font-medium uppercase tracking-wider;
+    color: hsl(240 5% 45%);
   }
   .data-table tbody tr {
-    @apply border-b border-border/50 transition-colors hover:bg-muted/50;
+    border-bottom: 1px solid hsl(0 0% 100% / 0.04);
+    transition: background 0.2s ease;
+  }
+  .data-table tbody tr:hover {
+    background: hsl(0 0% 100% / 0.03);
   }
   .data-table td {
-    @apply px-4 py-3.5;
+    @apply px-5 py-4;
+  }
+
+  /* Breathing pulse for active status */
+  @keyframes breathing {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+  .breathing {
+    animation: breathing 3s ease-in-out infinite;
   }
 }
