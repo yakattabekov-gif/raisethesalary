@@ -1842,13 +1842,17 @@ async function executeUpdateSender(
       });
 
       // 4. Build update payload — preserve all existing sender fields
+      // Extract city_id properly (may be nested object)
+      const senderCityId = typeof sender.city_id === 'number' ? sender.city_id 
+        : (sender.city?.id ? Number(sender.city.id) : Number(sender.city_id));
+      
       const updatePayload: any = {
         title: sender.title,
         entity: sender.entity || sender.title,
         full_name: sender.full_name,
         phone: sender.phone,
         additional_phone: sender.additional_phone || null,
-        city_id: typeof sender.city_id === 'number' ? sender.city_id : Number(sender.city_id),
+        city_id: senderCityId,
         latitude: sender.latitude != null ? Number(sender.latitude) : null,
         longitude: sender.longitude != null ? Number(sender.longitude) : null,
         street: sender.street || "",
@@ -1864,6 +1868,31 @@ async function executeUpdateSender(
         updatePayload.index = String(sender.index).substring(0, 10);
       } else {
         updatePayload.index = null;
+      }
+
+      // If existing lat/lng are null, geocode using existing address to get coordinates
+      if (updatePayload.latitude == null || updatePayload.longitude == null) {
+        const yandexApiKey = settings.yandex_geocoder_api_key;
+        if (yandexApiKey && (sender.street || sender.full_address)) {
+          const existingGeoQuery = `${senderCity}, ${sender.street || ""} ${sender.house || ""}`.trim();
+          console.log(`[${VERSION}] Geocoding existing sender address (lat/lng were null): "${existingGeoQuery}"`);
+          try {
+            const geoResp = await fetch(
+              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(existingGeoQuery)}`
+            );
+            const geoData = await geoResp.json();
+            const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+            const pos = geoMember?.Point?.pos;
+            if (pos) {
+              const [lon, lat] = pos.split(" ").map(Number);
+              updatePayload.latitude = lat;
+              updatePayload.longitude = lon;
+              console.log(`[${VERSION}] Resolved existing sender coords: lat=${lat}, lng=${lon}`);
+            }
+          } catch (geoErr: any) {
+            console.warn(`[${VERSION}] Geocoding existing sender address failed: ${geoErr.message}`);
+          }
+        }
       }
 
       const beforeState: any = {};
@@ -2115,50 +2144,79 @@ async function executeChangeSenderDirection(
         return addr;
       };
 
-      let currentStreet = stripCityFromAddress(sender.street || "");
-      const currentHouse = sender.house || "";
-      let newFullAddress = stripCityFromAddress(sender.full_address || "");
+      // Use new address from AI result if provided, otherwise use existing sender address
+      const newAddress = aiResult.address;
+      const newSenderData = aiResult.sender;
+      let currentStreet = newAddress?.street || stripCityFromAddress(sender.street || "");
+      const currentHouse = newAddress?.house || sender.house || "";
+      let newFullAddress = newAddress?.full_address || stripCityFromAddress(sender.full_address || "");
       let newLatitude = sender.latitude != null ? Number(sender.latitude) : null;
       let newLongitude = sender.longitude != null ? Number(sender.longitude) : null;
 
-      if (currentStreet) {
-        const yandexApiKey = settings.yandex_geocoder_api_key;
+      // Always geocode in the new city context
+      const yandexApiKey = settings.yandex_geocoder_api_key;
+      if (yandexApiKey && (currentStreet || currentHouse)) {
+        const geoQuery = `${cityName}, ${currentStreet} ${currentHouse}`.trim();
+        console.log(`[${VERSION}] Geocoding sender in new city: "${geoQuery}"`);
+        try {
+          const geoResp = await fetch(
+            `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
+          );
+          const geoData = await geoResp.json();
+          const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+          const pos = geoMember?.Point?.pos;
+          if (pos) {
+            const [lon, lat] = pos.split(" ").map(Number);
+            newLatitude = lat;
+            newLongitude = lon;
+            const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
+            if (formattedAddr) newFullAddress = formattedAddr;
+          }
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_sender_direction", step: "geocoding_new_city",
+            request_data: { query: geoQuery },
+            response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
+            success: !!geoMember,
+          });
+        } catch (geoErr: any) {
+          console.warn(`[${VERSION}] Sender geocoding failed: ${geoErr.message}`);
+        }
+      }
+
+      // Fallback: if lat/lng still null, use city center coordinates
+      if (newLatitude == null || newLongitude == null) {
+        console.warn(`[${VERSION}] WARNING: lat/lng still null after geocoding, attempting city-level geocode`);
         if (yandexApiKey) {
-          const geoQuery = `${cityName}, ${currentStreet} ${currentHouse}`.trim();
-          console.log(`[${VERSION}] Geocoding sender in new city: "${geoQuery}"`);
           try {
-            const geoResp = await fetch(
-              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
+            const cityGeoResp = await fetch(
+              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(cityName)}`
             );
-            const geoData = await geoResp.json();
-            const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-            const pos = geoMember?.Point?.pos;
-            if (pos) {
-              const [lon, lat] = pos.split(" ").map(Number);
+            const cityGeoData = await cityGeoResp.json();
+            const cityGeoMember = cityGeoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+            const cityPos = cityGeoMember?.Point?.pos;
+            if (cityPos) {
+              const [lon, lat] = cityPos.split(" ").map(Number);
               newLatitude = lat;
               newLongitude = lon;
-              const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
-              if (formattedAddr) newFullAddress = formattedAddr;
+              console.log(`[${VERSION}] Using city center coords: lat=${lat}, lng=${lon}`);
             }
-            await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_sender_direction", step: "geocoding_new_city",
-              request_data: { query: geoQuery },
-              response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
-              success: !!geoMember,
-            });
-          } catch (geoErr: any) {
-            console.warn(`[${VERSION}] Sender geocoding failed: ${geoErr.message}`);
-          }
+          } catch (_) {}
         }
       }
 
       // 5. Build PUT payload
+      const senderTitle = newSenderData?.full_name || sender.title;
+      const senderEntity = newSenderData?.entity || newSenderData?.full_name || sender.entity || sender.title;
+      const senderFullName = newSenderData?.full_name || sender.full_name;
+      const senderPhone = newSenderData?.phone ? normalizePhone(newSenderData.phone) : sender.phone;
+      const senderAdditionalPhone = newSenderData?.additional_phone ? normalizePhone(newSenderData.additional_phone) : (sender.additional_phone || null);
+
       const updatePayload: any = {
-        title: sender.title,
-        entity: sender.entity || sender.title,
-        full_name: sender.full_name,
-        phone: sender.phone,
-        additional_phone: sender.additional_phone || null,
+        title: senderTitle,
+        entity: senderEntity,
+        full_name: senderFullName,
+        phone: senderPhone,
+        additional_phone: senderAdditionalPhone,
         city_id: Number(cityId),
         latitude: newLatitude,
         longitude: newLongitude,
@@ -2167,7 +2225,7 @@ async function executeChangeSenderDirection(
         full_address: newFullAddress,
         comment: sender.comment || null,
         office: sender.office || null,
-        index: sender.index || null,
+        index: sender.index ? String(sender.index).substring(0, 10) : null,
         company_id: sender.company_id || null,
         id: sender.id,
         warehouse_id: null, // ALWAYS null
