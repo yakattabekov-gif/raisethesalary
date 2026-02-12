@@ -19,13 +19,9 @@ serve(async (req) => {
     if (!schedule) throw new Error("schedule is required (cron expression, e.g. '*/2 * * * *')");
 
     // Unschedule existing job if any
-    try {
-      await supabase.rpc("unschedule_cron_job", { job_name: "process-jira-tasks-cron" });
-    } catch (_) {
-      // ignore if job doesn't exist
-    }
+    await supabase.rpc("unschedule_cron_job", { job_name: "process-jira-tasks-cron" }).catch(() => {});
 
-    // Schedule new cron job
+    // Use raw SQL via pg function to schedule new cron
     const functionUrl = `${supabaseUrl}/functions/v1/process-jira-tasks`;
     
     const { error } = await supabase.rpc("schedule_cron_job", {

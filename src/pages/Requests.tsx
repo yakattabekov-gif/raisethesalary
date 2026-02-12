@@ -1,8 +1,7 @@
 import { useProcessedTasks } from "@/hooks/useProcessedTasks";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Eye, ListTodo } from "lucide-react";
-import { motion } from "framer-motion";
+import { Eye } from "lucide-react";
 
 const statusPill = (status: string) => {
   if (status === "completed") return <span className="pill-success">Completed</span>;
@@ -16,24 +15,12 @@ const Requests = () => {
 
   return (
     <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-2xl bg-warning/15 flex items-center justify-center">
-            <ListTodo className="w-5 h-5 text-warning" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Заявки</h1>
-            <p className="text-[11px] text-muted-foreground">Обработанные заявки из Jira</p>
-          </div>
-        </div>
-      </motion.div>
+      <div>
+        <h1 className="text-2xl font-extrabold text-foreground tracking-tight">Заявки</h1>
+        <p className="text-sm text-muted-foreground mt-1">Обработанные заявки из Jira</p>
+      </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-        className="glass rounded-[24px] overflow-hidden"
-      >
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
         <table className="data-table">
           <thead>
             <tr>
@@ -53,36 +40,42 @@ const Requests = () => {
                 <td className="text-sm text-foreground">{task.action || "—"}</td>
                 <td>{statusPill(task.status)}</td>
                 <td className="text-sm">
-                  {task.dry_run ? <span className="pill-warning">ДА</span> : <span className="text-muted-foreground">—</span>}
+                  {task.dry_run ? (
+                    <span className="pill-warning">ДА</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </td>
-                <td className="text-sm text-foreground">{task.retry_count}</td>
-                <td className="text-sm text-muted-foreground">{new Date(task.created_at).toLocaleString()}</td>
+                <td className="text-sm">{task.retry_count}</td>
+                <td className="text-sm text-muted-foreground">
+                  {new Date(task.created_at).toLocaleString()}
+                </td>
                 <td>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <button className="p-2 rounded-full hover:bg-muted/30 transition-colors text-muted-foreground hover:text-foreground">
+                      <button className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                         <Eye className="w-4 h-4" />
                       </button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-2xl glass-thick border-0">
+                    <DialogContent className="max-w-2xl">
                       <DialogHeader>
-                        <DialogTitle className="text-sm font-semibold text-foreground">{task.jira_issue_key} — {task.action}</DialogTitle>
+                        <DialogTitle className="text-sm font-semibold">{task.jira_issue_key} — {task.action}</DialogTitle>
                       </DialogHeader>
                       <ScrollArea className="max-h-[60vh]">
                         <div className="space-y-4 text-sm">
                           <div>
-                            <p className="text-[11px] text-muted-foreground font-medium mb-1 uppercase tracking-wider">Summary</p>
+                            <p className="text-xs text-muted-foreground font-medium mb-1">Summary</p>
                             <p className="text-foreground">{task.jira_summary || "—"}</p>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground font-medium mb-1 uppercase tracking-wider">AI Response</p>
-                            <pre className="bg-muted/20 rounded-2xl p-4 text-xs overflow-auto text-foreground">
+                            <p className="text-xs text-muted-foreground font-medium mb-1">AI Response</p>
+                            <pre className="bg-muted rounded-xl p-4 text-xs overflow-auto text-foreground">
                               {task.ai_response ? JSON.stringify(task.ai_response, null, 2) : "—"}
                             </pre>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground font-medium mb-1 uppercase tracking-wider">Результат</p>
-                            <pre className="bg-muted/20 rounded-2xl p-4 text-xs overflow-auto text-foreground">
+                            <p className="text-xs text-muted-foreground font-medium mb-1">Результат</p>
+                            <pre className="bg-muted rounded-xl p-4 text-xs overflow-auto text-foreground">
                               {task.execution_result ? JSON.stringify(task.execution_result, null, 2) : "—"}
                             </pre>
                           </div>
@@ -94,14 +87,20 @@ const Requests = () => {
               </tr>
             ))}
             {isLoading && (
-              <tr><td colSpan={7} className="text-center text-muted-foreground py-16">Загрузка...</td></tr>
+              <tr>
+                <td colSpan={7} className="text-center text-muted-foreground py-16">Загрузка...</td>
+              </tr>
             )}
             {!isLoading && (!tasks || tasks.length === 0) && (
-              <tr><td colSpan={7} className="text-center text-muted-foreground py-16">Нет обработанных заявок</td></tr>
+              <tr>
+                <td colSpan={7} className="text-center text-muted-foreground py-16">
+                  Нет обработанных заявок.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
-      </motion.div>
+      </div>
     </div>
   );
 };
