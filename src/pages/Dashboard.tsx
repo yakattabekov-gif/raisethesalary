@@ -1,19 +1,19 @@
-import { Activity, CheckCircle2, XCircle, Timer, Play, Clock, Zap, TrendingUp } from "lucide-react";
+import { Activity, CheckCircle2, XCircle, Timer, Play, Clock } from "lucide-react";
 import { useCronRuns } from "@/hooks/useCronRuns";
 import { useProcessedTasks } from "@/hooks/useProcessedTasks";
 import { useSettings } from "@/hooks/useSettings";
 import { formatDistanceToNow, format } from "date-fns";
 import { ru } from "date-fns/locale";
-import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState } from "react";
+import { motion } from "framer-motion";
 
-const MiniSparkline = ({ data }: { data: number[] }) => {
+const Sparkline = ({ data }: { data: number[] }) => {
   if (!data || data.length < 2) return null;
   const max = Math.max(...data, 1);
-  const w = 120;
-  const h = 40;
+  const w = 140;
+  const h = 48;
   const points = data
     .map((v, i) => {
       const x = (i / (data.length - 1)) * w;
@@ -23,18 +23,18 @@ const MiniSparkline = ({ data }: { data: number[] }) => {
     .join(" ");
 
   return (
-    <svg width={w} height={h} className="opacity-60">
+    <svg width={w} height={h} className="mt-2 opacity-70">
       <defs>
-        <linearGradient id="spark-grad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="1" />
+        <linearGradient id="spark-spatial" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stopColor="hsl(250, 80%, 65%)" stopOpacity="0.2" />
+          <stop offset="100%" stopColor="hsl(250, 80%, 65%)" stopOpacity="0.9" />
         </linearGradient>
       </defs>
       <polyline
         points={points}
         fill="none"
-        stroke="url(#spark-grad)"
-        strokeWidth="2"
+        stroke="url(#spark-spatial)"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -42,9 +42,14 @@ const MiniSparkline = ({ data }: { data: number[] }) => {
   );
 };
 
-const StatusDot = ({ active }: { active: boolean }) => (
-  <span className={`inline-block w-2 h-2 rounded-full ${active ? "bg-success animate-pulse" : "bg-muted-foreground/30"}`} />
-);
+const stagger = {
+  container: { transition: { staggerChildren: 0.08 } },
+  item: {
+    initial: { opacity: 0, y: 20, scale: 0.97 },
+    animate: { opacity: 1, y: 0, scale: 1 },
+    transition: { duration: 0.5, ease: [0.23, 1, 0.32, 1] },
+  },
+};
 
 const Dashboard = () => {
   const { data: cronRuns } = useCronRuns();
@@ -54,7 +59,6 @@ const Dashboard = () => {
 
   const lastRun = cronRuns?.[0];
   const botEnabled = settings?.find(s => s.key === "bot_enabled")?.value !== "false";
-  const aiEnabled = settings?.find(s => s.key === "ai_enabled")?.value === "true";
   const dryRun = settings?.find(s => s.key === "dry_run")?.value === "true";
 
   const successCount = tasks?.filter(t => t.status === "completed").length ?? 0;
@@ -77,118 +81,113 @@ const Dashboard = () => {
 
   const statusBadge = (status: string) => {
     if (status === "completed") return <span className="pill-success">✓ Готов</span>;
-    if (status === "running") return <span className="pill-warning">⟳ В работе</span>;
+    if (status === "running") return <span className="pill-warning">⟳ Работает</span>;
     if (status === "error") return <span className="pill-error">✕ Ошибка</span>;
     return <span className="pill-idle">{status}</span>;
   };
 
+  const stats = [
+    {
+      label: "Статус",
+      value: botEnabled ? "Online" : "Off",
+      sub: lastRun ? formatDistanceToNow(new Date(lastRun.started_at), { addSuffix: true, locale: ru }) : "—",
+      icon: Timer,
+      color: "text-success",
+      glow: botEnabled,
+    },
+    {
+      label: "Обработано",
+      value: totalProcessed,
+      sub: "всего задач",
+      icon: Activity,
+      color: "text-primary",
+      sparkline: true,
+    },
+    {
+      label: "Успешно",
+      value: successCount,
+      sub: totalProcessed > 0 ? `${Math.round((successCount / totalProcessed) * 100)}%` : "—",
+      icon: CheckCircle2,
+      color: "text-success",
+    },
+    {
+      label: "Ошибки",
+      value: errorCount,
+      sub: totalProcessed > 0 ? `${Math.round((errorCount / totalProcessed) * 100)}%` : "—",
+      icon: XCircle,
+      color: errorCount > 0 ? "text-destructive" : "text-muted-foreground",
+    },
+  ];
+
   return (
     <div className="space-y-8">
-      {/* Hero header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="flex flex-col sm:flex-row sm:items-end justify-between gap-4"
+      >
         <div>
-          <h1 className="text-3xl font-extrabold text-foreground tracking-tight">
+          <h1 className="text-4xl font-extrabold text-foreground tracking-tight">
             Обзор системы
           </h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Автоматизация Jira → Spark · {lastRun
+          <p className="text-muted-foreground mt-2 text-sm flex items-center gap-2">
+            <Clock className="w-3.5 h-3.5" />
+            {lastRun
               ? `Последний запуск ${formatDistanceToNow(new Date(lastRun.started_at), { addSuffix: true, locale: ru })}`
               : "Нет данных"}
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {dryRun && <span className="pill-warning text-[11px] font-semibold">DRY-RUN</span>}
-          <Button
+          {dryRun && <span className="pill-warning text-[10px]">DRY-RUN</span>}
+          <motion.button
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
             onClick={handleTrigger}
             disabled={triggerLoading}
-            size="sm"
-            className="rounded-full gap-2 font-semibold shadow-sm"
+            className="glass rounded-full px-5 py-2.5 flex items-center gap-2 text-sm font-semibold text-foreground hover:glow-primary transition-all disabled:opacity-50"
           >
             <Play className="w-3.5 h-3.5" />
-            {triggerLoading ? "Запуск..." : "Запустить сейчас"}
-          </Button>
+            {triggerLoading ? "Запуск..." : "Запустить"}
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
 
-      {/* System status bar */}
-      <div className="bg-card border border-border rounded-2xl p-4 flex flex-wrap items-center gap-6">
-        <div className="flex items-center gap-2">
-          <StatusDot active={botEnabled} />
-          <span className="text-sm font-medium text-foreground">Бот {botEnabled ? "активен" : "выключен"}</span>
-        </div>
-        <div className="h-4 w-px bg-border" />
-        <div className="flex items-center gap-2">
-          <StatusDot active={aiEnabled} />
-          <span className="text-sm text-muted-foreground">AI-парсинг {aiEnabled ? "вкл" : "выкл"}</span>
-        </div>
-        <div className="h-4 w-px bg-border" />
-        <div className="flex items-center gap-1.5">
-          <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">
-            Крон: каждые {settings?.find(s => s.key === "jira_cron_schedule")?.value || "2 мин"}
-          </span>
-        </div>
-      </div>
-
-      {/* Bento stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          {
-            label: "Статус крона",
-            value: lastRun?.status === "completed" ? "Готов" : lastRun?.status === "running" ? "Работает" : "—",
-            sub: lastRun ? `${lastRun.tasks_found} задач найдено` : "Нет запусков",
-            icon: Timer,
-            accent: lastRun?.status === "completed" ? "text-success" : "text-warning",
-            bgAccent: lastRun?.status === "completed" ? "bg-success/10" : "bg-warning/10",
-          },
-          {
-            label: "Обработано",
-            value: totalProcessed,
-            sub: "всего задач",
-            icon: Activity,
-            accent: "text-primary",
-            bgAccent: "bg-primary/10",
-            sparkline: true,
-          },
-          {
-            label: "Успешно",
-            value: successCount,
-            sub: totalProcessed > 0 ? `${Math.round((successCount / totalProcessed) * 100)}%` : "—",
-            icon: CheckCircle2,
-            accent: "text-success",
-            bgAccent: "bg-success/10",
-          },
-          {
-            label: "Ошибки",
-            value: errorCount,
-            sub: totalProcessed > 0 ? `${Math.round((errorCount / totalProcessed) * 100)}%` : "—",
-            icon: XCircle,
-            accent: errorCount > 0 ? "text-destructive" : "text-muted-foreground",
-            bgAccent: errorCount > 0 ? "bg-destructive/10" : "bg-muted",
-          },
-        ].map((card) => (
-          <div key={card.label} className="bg-card border border-border rounded-2xl p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
-              <div className={`w-9 h-9 rounded-xl ${card.bgAccent} flex items-center justify-center`}>
-                <card.icon className={`w-4.5 h-4.5 ${card.accent}`} />
-              </div>
+      {/* Bento Stats */}
+      <motion.div
+        variants={stagger.container}
+        initial="initial"
+        animate="animate"
+        className="grid grid-cols-2 lg:grid-cols-4 gap-4"
+      >
+        {stats.map((card) => (
+          <motion.div
+            key={card.label}
+            variants={stagger.item}
+            className={`glass rounded-[24px] p-6 group hover:scale-[1.02] transition-transform duration-300 ${
+              card.glow ? "glow-success" : ""
+            }`}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{card.label}</p>
+              <card.icon className={`w-5 h-5 ${card.color} ${card.glow ? "breathing" : ""}`} />
             </div>
-            <p className="text-3xl font-extrabold text-foreground tracking-tight">{card.value}</p>
+            <p className="text-4xl font-extralight text-foreground tracking-tighter">{card.value}</p>
             <p className="text-xs text-muted-foreground mt-1">{card.sub}</p>
-            {card.sparkline && sparklineData.length >= 2 && (
-              <div className="mt-2">
-                <MiniSparkline data={sparklineData} />
-              </div>
-            )}
-          </div>
+            {card.sparkline && sparklineData.length >= 2 && <Sparkline data={sparklineData} />}
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
-      {/* Recent runs table */}
-      <div>
+      {/* Recent runs */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.3 }}
+      >
         <h2 className="text-lg font-semibold text-foreground mb-4">Последние запуски</h2>
-        <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="glass rounded-[24px] overflow-hidden">
           <table className="data-table">
             <thead>
               <tr>
@@ -211,8 +210,8 @@ const Dashboard = () => {
                       {format(new Date(run.started_at), "dd.MM HH:mm:ss")}
                     </td>
                     <td>{statusBadge(run.status)}</td>
-                    <td className="text-sm font-medium">{run.tasks_found}</td>
-                    <td className="text-sm font-medium">{run.tasks_processed}</td>
+                    <td className="text-sm font-medium text-foreground">{run.tasks_found}</td>
+                    <td className="text-sm font-medium text-foreground">{run.tasks_processed}</td>
                     <td className="text-sm text-muted-foreground">
                       {duration !== null ? `${duration}с` : "—"}
                     </td>
@@ -232,7 +231,7 @@ const Dashboard = () => {
             </tbody>
           </table>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
