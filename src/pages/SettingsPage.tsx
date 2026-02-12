@@ -3,7 +3,6 @@ import { useSettings, useUpdateSetting } from "@/hooks/useSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Save, Play } from "lucide-react";
@@ -33,9 +32,9 @@ const SettingsPage = () => {
   const handleSave = async (key: string) => {
     try {
       await updateSetting.mutateAsync({ key, value: formValues[key] });
-      toast.success(`${key} saved`);
+      toast.success(`${key} сохранён`);
     } catch {
-      toast.error(`Failed to save ${key}`);
+      toast.error(`Ошибка сохранения ${key}`);
     }
   };
 
@@ -44,121 +43,89 @@ const SettingsPage = () => {
     try {
       const { error } = await supabase.functions.invoke("process-jira-tasks");
       if (error) throw error;
-      toast.success("Cron triggered manually");
+      toast.success("Крон запущен вручную");
     } catch (e: any) {
-      toast.error(e.message || "Failed to trigger cron");
+      toast.error(e.message || "Ошибка запуска");
     } finally {
       setTriggerLoading(false);
     }
   };
 
-  if (isLoading) return <div className="p-8 text-muted-foreground">Loading settings...</div>;
+  if (isLoading) return <div className="p-10 text-muted-foreground">Загрузка настроек...</div>;
 
-  const renderField = (key: string, label: string, type: "text" | "textarea" | "password" = "text") => (
-    <div className="space-y-2" key={key}>
-      <Label className="text-xs text-muted-foreground uppercase tracking-wider">{label}</Label>
+  const Field = ({ keyName, label, type = "text" }: { keyName: string; label: string; type?: "text" | "textarea" | "password" }) => (
+    <div className="space-y-2">
+      <Label className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold">{label}</Label>
       <div className="flex gap-2">
         {type === "textarea" ? (
           <Textarea
-            value={formValues[key] || ""}
-            onChange={(e) => handleChange(key, e.target.value)}
-            className="font-mono text-sm bg-secondary border-border"
+            value={formValues[keyName] || ""}
+            onChange={(e) => handleChange(keyName, e.target.value)}
+            className="font-mono text-sm bg-input border-border/60 focus:border-primary/40"
             rows={3}
           />
         ) : (
           <Input
             type={type}
-            value={formValues[key] || ""}
-            onChange={(e) => handleChange(key, e.target.value)}
-            className="font-mono text-sm bg-secondary border-border"
+            value={formValues[keyName] || ""}
+            onChange={(e) => handleChange(keyName, e.target.value)}
+            className="font-mono text-sm bg-input border-border/60 focus:border-primary/40"
           />
         )}
-        <Button size="sm" variant="outline" onClick={() => handleSave(key)} className="shrink-0">
+        <Button size="sm" variant="outline" onClick={() => handleSave(keyName)} className="shrink-0 h-10">
           <Save className="w-3.5 h-3.5" />
         </Button>
       </div>
     </div>
   );
 
+  const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
+    <section className="space-y-5">
+      <h2 className="text-[13px] font-bold text-foreground uppercase tracking-wider border-b border-border/40 pb-3">{title}</h2>
+      {children}
+    </section>
+  );
+
   return (
-    <div className="p-8 space-y-8 max-w-3xl">
-      <div className="space-y-1">
-        <h1 className="text-xl font-semibold text-foreground">Settings</h1>
-        <p className="text-sm text-muted-foreground">Конфигурация Jira, Spark и системы</p>
+    <div className="p-6 lg:p-10 space-y-10 max-w-3xl">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground tracking-tight">Настройки</h1>
+        <p className="text-sm text-muted-foreground mt-1">Конфигурация Jira, Spark и системы</p>
       </div>
 
-      {/* Jira */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">Jira Configuration</h2>
-        {renderField("jira_base_url", "Base URL")}
-        {renderField("jira_email", "Email")}
-        {renderField("jira_api_token", "API Token", "password")}
-        {renderField("jira_project_key", "Project Key")}
-        {renderField("jira_queue_jql", "Queue JQL", "textarea")}
-        {renderField("jira_cron_interval", "Cron Interval (seconds)")}
-      </section>
+      <Section title="Jira">
+        <Field keyName="jira_base_url" label="Base URL" />
+        <Field keyName="jira_email" label="Email" />
+        <Field keyName="jira_api_token" label="API Token" type="password" />
+        <Field keyName="jira_project_key" label="Project Key" />
+        <Field keyName="jira_queue_jql" label="Queue JQL" type="textarea" />
+        <Field keyName="jira_cron_interval" label="Cron Interval (seconds)" />
+      </Section>
 
-      {/* Spark */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">Spark Configuration</h2>
-        {renderField("spark_base_url", "Base API URL")}
-        {renderField("spark_bearer_token", "Bearer Token", "password")}
-        <div className="flex items-center gap-2">
+      <Section title="Spark">
+        <Field keyName="spark_base_url" label="Base API URL" />
+        <Field keyName="spark_bearer_token" label="Bearer Token" type="password" />
+        <div className="flex items-center gap-2 mt-1">
           <span className={`status-dot-${formValues.spark_bearer_token ? "success" : "error"}`} />
-          <span className="text-xs font-mono text-muted-foreground">
-            Token: {formValues.spark_bearer_token ? "Configured" : "Missing"}
+          <span className="text-[11px] font-mono text-muted-foreground">
+            Token: {formValues.spark_bearer_token ? "Настроен" : "Отсутствует"}
           </span>
         </div>
-        {renderField("yandex_geocoder_api_key", "Yandex Geocoder API Key", "password")}
-      </section>
+        <Field keyName="yandex_geocoder_api_key" label="Yandex Geocoder API Key" type="password" />
+      </Section>
 
-      {/* AI */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">AI Configuration (OpenAI)</h2>
-        {renderField("openai_api_key", "OpenAI API Key", "password")}
-      </section>
+      <Section title="AI (OpenAI)">
+        <Field keyName="openai_api_key" label="OpenAI API Key" type="password" />
+      </Section>
 
-      {/* System */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">System</h2>
-        <div className="flex items-center justify-between py-2">
-          <div>
-            <p className="text-sm text-foreground">AI Parsing</p>
-            <p className="text-xs text-muted-foreground">Использовать AI для парсинга заявок</p>
-          </div>
-          <Switch
-            checked={formValues.ai_enabled === "true"}
-            onCheckedChange={(checked) => {
-              handleChange("ai_enabled", checked ? "true" : "false");
-              updateSetting.mutate({ key: "ai_enabled", value: checked ? "true" : "false" });
-            }}
-          />
-        </div>
-        <div className="flex items-center justify-between py-2">
-          <div>
-            <p className="text-sm text-foreground">Dry-Run Mode</p>
-            <p className="text-xs text-muted-foreground">Не выполнять реальные действия в Spark</p>
-          </div>
-          <Switch
-            checked={formValues.dry_run === "true"}
-            onCheckedChange={(checked) => {
-              handleChange("dry_run", checked ? "true" : "false");
-              updateSetting.mutate({ key: "dry_run", value: checked ? "true" : "false" });
-            }}
-          />
-        </div>
-      </section>
-
-      {/* Manual trigger & Cron */}
-      <section className="space-y-4">
-        <h2 className="text-sm font-semibold text-foreground border-b border-border pb-2">Cron & Manual Actions</h2>
+      <Section title="Крон и ручной запуск">
         <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground uppercase tracking-wider">Cron Schedule (cron expression)</Label>
+          <Label className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold">Cron Schedule</Label>
           <div className="flex gap-2">
             <Input
               value={cronSchedule}
               onChange={(e) => setCronSchedule(e.target.value)}
-              className="font-mono text-sm bg-secondary border-border"
+              className="font-mono text-sm bg-input border-border/60"
               placeholder="*/2 * * * *"
             />
             <Button
@@ -172,29 +139,28 @@ const SettingsPage = () => {
                     body: { schedule: cronSchedule },
                   });
                   if (error) throw error;
-                  // Also save to settings for persistence
                   await updateSetting.mutateAsync({ key: "jira_cron_schedule", value: cronSchedule });
-                  toast.success(`Cron schedule updated: ${cronSchedule}`);
+                  toast.success(`Крон обновлён: ${cronSchedule}`);
                 } catch (e: any) {
-                  toast.error(e.message || "Failed to update cron schedule");
+                  toast.error(e.message || "Ошибка обновления крона");
                 } finally {
                   setCronLoading(false);
                 }
               }}
-              className="shrink-0"
+              className="shrink-0 h-10"
             >
               <Save className="w-3.5 h-3.5" />
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground font-mono">
-            Примеры: */2 * * * * (каждые 2 мин), */5 * * * * (каждые 5 мин), 0 * * * * (каждый час)
+          <p className="text-[11px] text-muted-foreground font-mono">
+            */2 * * * * (каждые 2 мин) · */5 * * * * (каждые 5 мин) · 0 * * * * (каждый час)
           </p>
         </div>
-        <Button onClick={handleTriggerCron} disabled={triggerLoading} className="gap-2">
+        <Button onClick={handleTriggerCron} disabled={triggerLoading} className="gap-2 font-semibold">
           <Play className="w-4 h-4" />
-          {triggerLoading ? "Running..." : "Trigger Cron Now"}
+          {triggerLoading ? "Запуск..." : "Запустить крон"}
         </Button>
-      </section>
+      </Section>
     </div>
   );
 };
