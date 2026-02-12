@@ -43,8 +43,7 @@ export const useUpdateSetting = () => {
     mutationFn: async ({ key, value }: { key: string; value: string }) => {
       const { error } = await supabase
         .from("settings")
-        .update({ value })
-        .eq("key", key);
+        .upsert({ key, value, category: "general" }, { onConflict: "key" });
       if (error) throw error;
     },
     onSuccess: () => {
