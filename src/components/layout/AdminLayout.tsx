@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, ListTodo, ScrollText, Settings, Zap, Bot } from "lucide-react";
+import { LayoutDashboard, ListTodo, ScrollText, Settings, Zap, Bot, Sparkles, FlaskConical } from "lucide-react";
 import { useSettings, useUpdateSetting } from "@/hooks/useSettings";
 import { Switch } from "@/components/ui/switch";
 
@@ -25,90 +25,97 @@ const AdminLayout = () => {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      {/* Sidebar */}
-      <aside className="w-[260px] bg-sidebar flex flex-col shrink-0 border-r border-sidebar-border">
-        {/* Logo */}
-        <div className="px-5 py-5">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center">
-              <Zap className="w-[18px] h-[18px] text-primary" />
-            </div>
-            <div>
-              <h1 className="text-[15px] font-bold text-foreground tracking-tight">Spark Bot</h1>
-              <p className="text-[11px] text-muted-foreground font-mono mt-0.5">automation · v1.0</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Bot master toggle */}
-        <div className="mx-4 mb-3 p-3 rounded-xl bg-accent/60 border border-border/40">
-          <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-secondary/30">
+      {/* Top Navigation */}
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5">
-              <Bot className="w-4 h-4 text-primary" />
-              <span className="text-[13px] font-semibold text-foreground">Бот</span>
-            </div>
-            <Switch
-              checked={botEnabled}
-              onCheckedChange={() => toggleSetting("bot_enabled", botEnabled)}
-            />
-          </div>
-          {botEnabled && (
-            <div className="mt-3 space-y-2.5 pt-3 border-t border-border/40">
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] text-muted-foreground">AI парсинг</span>
-                <Switch
-                  checked={aiEnabled}
-                  onCheckedChange={() => toggleSetting("ai_enabled", aiEnabled)}
-                  className="scale-[0.85]"
-                />
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-primary-foreground" />
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] text-muted-foreground">Dry-run</span>
+              <span className="text-base font-bold text-foreground tracking-tight">Spark Bot</span>
+            </div>
+
+            {/* Nav Links */}
+            <nav className="hidden md:flex items-center gap-1">
+              {navItems.map(({ to, icon: Icon, label }) => {
+                const isActive = to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
+                return (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {label}
+                  </NavLink>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Right side: toggles */}
+          <div className="flex items-center gap-5">
+            {/* Dry-run pill */}
+            {dryRun && (
+              <span className="pill-warning text-[11px] font-semibold">
+                DRY-RUN
+              </span>
+            )}
+
+            {/* Toggle controls */}
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <FlaskConical className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground hidden lg:inline">Dry-run</span>
                 <Switch
                   checked={dryRun}
                   onCheckedChange={() => toggleSetting("dry_run", dryRun)}
-                  className="scale-[0.85]"
+                  className="scale-90"
                 />
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground hidden lg:inline">AI</span>
+                <Switch
+                  checked={aiEnabled}
+                  onCheckedChange={() => toggleSetting("ai_enabled", aiEnabled)}
+                  className="scale-90"
+                />
+              </label>
+
+              <div className="w-px h-6 bg-border" />
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <Bot className="w-4 h-4 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground hidden lg:inline">Бот</span>
+                <Switch
+                  checked={botEnabled}
+                  onCheckedChange={() => toggleSetting("bot_enabled", botEnabled)}
+                />
+              </label>
+
+              {/* Status indicator */}
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${botEnabled ? "bg-success animate-pulse" : "bg-muted-foreground/30"}`} />
+                <span className="text-[11px] text-muted-foreground hidden lg:inline">
+                  {botEnabled ? "Активен" : "Выкл"}
+                </span>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 px-3 space-y-0.5">
-          {navItems.map(({ to, icon: Icon, label }) => {
-            const isActive = to === "/" ? location.pathname === "/" : location.pathname.startsWith(to);
-            return (
-              <NavLink
-                key={to}
-                to={to}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-150 ${
-                  isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <Icon className="w-[18px] h-[18px]" />
-                {label}
-              </NavLink>
-            );
-          })}
-        </nav>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-sidebar-border">
-          <div className="flex items-center gap-2">
-            <span className={botEnabled ? "status-dot-success" : "status-dot-idle"} />
-            <span className="text-[11px] font-mono text-muted-foreground">
-              {botEnabled ? "Бот активен" : "Бот выключен"}
-            </span>
           </div>
         </div>
-      </aside>
+      </header>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-background">
+      <main className="max-w-7xl mx-auto px-6 py-8">
         <Outlet />
       </main>
     </div>

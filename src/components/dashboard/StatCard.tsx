@@ -6,30 +6,63 @@ interface StatCardProps {
   subtitle?: string;
   icon: LucideIcon;
   status?: "success" | "warning" | "error" | "idle";
+  sparkline?: number[];
 }
 
-const StatCard = ({ title, value, subtitle, icon: Icon, status }: StatCardProps) => {
-  const iconColor = status === "success" ? "text-primary" : 
-    status === "error" ? "text-destructive" : 
-    status === "warning" ? "text-warning" : "text-muted-foreground";
+const MiniSparkline = ({ data, color }: { data: number[]; color: string }) => {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const w = 80;
+  const h = 28;
+  const points = data
+    .map((v, i) => {
+      const x = (i / (data.length - 1)) * w;
+      const y = h - ((v - min) / range) * h;
+      return `${x},${y}`;
+    })
+    .join(" ");
 
   return (
-    <div className="glass-card glow-border p-5 animate-slide-in">
-      <div className="flex items-center justify-between mb-4">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-          status === "success" ? "bg-primary/10" :
-          status === "error" ? "bg-destructive/10" :
-          status === "warning" ? "bg-warning/10" : "bg-secondary"
-        }`}>
-          <Icon className={`w-5 h-5 ${iconColor}`} />
+    <svg width={w} height={h} className="mt-2">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
+
+const StatCard = ({ title, value, subtitle, icon: Icon, status, sparkline }: StatCardProps) => {
+  const colorMap = {
+    success: { icon: "text-success", bg: "bg-success/10", spark: "hsl(142, 71%, 45%)" },
+    error: { icon: "text-destructive", bg: "bg-destructive/10", spark: "hsl(0, 72%, 51%)" },
+    warning: { icon: "text-warning", bg: "bg-warning/10", spark: "hsl(38, 92%, 50%)" },
+    idle: { icon: "text-muted-foreground", bg: "bg-muted", spark: "hsl(215, 16%, 47%)" },
+  };
+
+  const c = colorMap[status || "idle"];
+
+  return (
+    <div className="bg-card rounded-2xl border border-border p-5 shadow-sm hover:shadow-md transition-shadow duration-200 animate-fade-in">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1">{title}</p>
+          <p className="text-3xl font-extrabold text-foreground tracking-tight">{value}</p>
+          {subtitle && (
+            <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>
+          )}
+          {sparkline && <MiniSparkline data={sparkline} color={c.spark} />}
         </div>
-        {status && <span className={`status-dot-${status}`} />}
+        <div className={`w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center shrink-0`}>
+          <Icon className={`w-5 h-5 ${c.icon}`} />
+        </div>
       </div>
-      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">{title}</p>
-      <p className="text-3xl font-bold font-mono text-foreground tracking-tight">{value}</p>
-      {subtitle && (
-        <p className="text-[12px] text-muted-foreground mt-1">{subtitle}</p>
-      )}
     </div>
   );
 };
