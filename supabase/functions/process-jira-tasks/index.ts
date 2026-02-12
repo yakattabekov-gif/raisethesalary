@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.7.0";
+const VERSION = "v2.8.0";
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -127,7 +127,8 @@ serve(async (req) => {
         .eq("jira_issue_key", issueKey)
         .single();
 
-      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || existing.retry_count >= 2)) {
+      // Allow "waiting_for_info" tasks to be reprocessed (check comments for invoice number)
+      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || (existing.status !== "waiting_for_info" && existing.retry_count >= 2))) {
         console.log(`[${VERSION}] Skipping ${issueKey}: status=${existing.status}, retry_count=${existing.retry_count}`);
         continue;
       }
@@ -180,9 +181,31 @@ serve(async (req) => {
 
       try {
         let aiResult: any = { actions: [] };
+        let combinedDescription = description;
+
+        // If task is waiting_for_info, check Jira comments for invoice numbers
+        if (existing?.status === "waiting_for_info") {
+          console.log(`[${VERSION}] Task ${issueKey} is waiting_for_info — checking Jira comments for invoice number`);
+          const commentsText = await fetchJiraComments(settings, jiraAuth, issueKey);
+          // Look for invoice numbers in comments (exclude our own bot comments)
+          const invoicePattern = /(?:KXT|SP|kxt|sp)\d{6,12}/gi;
+          const commentInvoices = commentsText.match(invoicePattern);
+          if (commentInvoices && commentInvoices.length > 0) {
+            console.log(`[${VERSION}] Found invoice(s) in comments: ${commentInvoices.join(", ")}`);
+            combinedDescription = `${description}\n\nИз комментариев: номера накладных: ${commentInvoices.join(", ")}`;
+          } else {
+            console.log(`[${VERSION}] No invoice numbers found in comments for ${issueKey} — still waiting`);
+            await supabase
+              .from("processed_tasks")
+              .update({ status: "waiting_for_info", retry_count: (existing.retry_count || 0) + 1 })
+              .eq("id", taskId);
+            processedCount++;
+            continue;
+          }
+        }
 
         if (aiEnabled) {
-          aiResult = await parseWithAI(settings, summary, description, supabase, taskId);
+          aiResult = await parseWithAI(settings, summary, combinedDescription, supabase, taskId);
         }
 
         // Store first action for backward compat in DB column
@@ -193,6 +216,20 @@ serve(async (req) => {
           .eq("id", taskId);
 
         if (!aiResult.actions || aiResult.actions.length === 0) {
+          // Check if AI detected an action but no invoice (needs_invoice flag)
+          if (aiResult.needs_invoice) {
+            console.log(`[${VERSION}] Task ${issueKey}: action detected but no invoice — asking in Jira`);
+            await addJiraComment(settings, jiraAuth, issueKey,
+              `⚠️ Номер накладной не найден в текстовом формате. Пожалуйста, укажите номер накладной текстом в комментарии (например: SP00493934 или KXT110098207).`
+            );
+            await supabase
+              .from("processed_tasks")
+              .update({ status: "waiting_for_info", execution_result: { message: "Ожидание номера накладной — запрошено в комментарии" } })
+              .eq("id", taskId);
+            processedCount++;
+            continue;
+          }
+
           await supabase
             .from("processed_tasks")
             .update({ status: "ignored", execution_result: { message: "Заявка не содержит поддерживаемых действий" } })
@@ -449,7 +486,7 @@ async function parseWithAI(
       "action": "update_receiver",
       "invoices": ["SP00493934"],
       "address": {"city": null, "street": "Тайбурыл", "house": "23/1", "full_address": "ул. Тайбурыл, 23/1"},
-      "receiver": {"full_name": "Мейржан", "phone": "+77777777777"}
+      "receiver": {"full_name": "Мейржан", "phone": "+77777777777", "entity": "Мейржан"}
     },
     {
       "action": "cancel",
@@ -475,7 +512,7 @@ async function parseWithAI(
       "action": "update_receiver",
       "invoices": ["KXT110098207"],
       "address": {"city": "Алматы", "street": "Алтын Алма", "house": "151", "full_address": "Казахстан, г. Алматы, ул. Алтын Алма, 151"},
-      "receiver": {"full_name": "ИВАНОВ ИВАН", "phone": "+77001234567"}
+      "receiver": {"full_name": "ИВАНОВ ИВАН", "phone": "+77001234567", "entity": "ИВАНОВ ИВАН"}
     }
   ]
 }
@@ -571,7 +608,7 @@ async function parseWithAI(
       "action": "update_sender",
       "invoices": ["SP00493934"],
       "address": null,
-      "sender": {"full_name": "Иванов Иван", "phone": "+77771234567"}
+      "sender": {"full_name": "Иванов Иван", "phone": "+77771234567", "entity": "Иванов Иван"}
     }
   ]
 }
@@ -604,10 +641,13 @@ async function parseWithAI(
 
 Важные правила:
 - НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры (KXT110098207, SP00493507...).
-- Если НЕТ номера накладной — верни {"actions": []}.
+- Если НЕТ номера накладной НО есть действие (клиент описывает что хочет сделать) — верни {"actions": [], "needs_invoice": true, "detected_action": "<название_действия>"}.
+- Если НЕТ номера накладной И нет действия — верни {"actions": []}.
 - Если просят сменить ТОЛЬКО ФИО/телефон — НЕ включай "address", только "receiver".
 - Если просят сменить ТОЛЬКО адрес — НЕ включай "receiver", только "address".
 - Если просят и адрес, и ФИО/телефон — включи оба в ОДНОМ update_receiver.
+- Поле "entity" — это название организации/компании (например "ТОО Клиника Хадиша", "ИП Рахмет"). Если в тексте упоминается название организации — ОБЯЗАТЕЛЬНО включи его в receiver/sender как "entity".
+- При изменении данных получателя/отправителя — ВСЕГДА копируй entity из текста заявки. Если entity указан — ставь его И в full_name, И в entity.
 - Телефон КОПИРУЙ ТОЧНО. Только замени первую 8 на +7 (87773954884 → +77773954884).
 - ГОРОД: Если не указан явно — city: null. НЕ УГАДЫВАЙ из названия улицы.
 - full_address: без города → "ул. {улица}, {дом}". С городом → "Казахстан, г. {город}, ул. {улица}, {дом}".
@@ -677,6 +717,45 @@ async function parseWithAI(
 }
 
 // ---- Jira Helpers ----
+
+async function fetchJiraComments(settings: Record<string, string>, auth: string, issueKey: string): Promise<string> {
+  try {
+    const baseUrl = settings.jira_base_url.replace(/\/+$/, "");
+    const resp = await fetch(`${baseUrl}/rest/api/3/issue/${issueKey}/comment`, {
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    });
+    if (!resp.ok) {
+      console.error(`[${VERSION}] Failed to fetch comments for ${issueKey}: ${resp.status}`);
+      return "";
+    }
+    const data = await resp.json();
+    const comments = data.comments || [];
+    // Extract text from ADF comments, skip bot comments (containing ✅ or ❌ or ⚠️)
+    const extractTextFromADF = (node: any): string => {
+      if (!node) return "";
+      if (typeof node === "string") return node;
+      if (node.type === "text") return node.text || "";
+      if (node.content && Array.isArray(node.content)) {
+        return node.content.map(extractTextFromADF).join("");
+      }
+      return "";
+    };
+    const commentTexts: string[] = [];
+    for (const comment of comments) {
+      const body = comment.body;
+      const text = typeof body === "string" ? body : (body?.content ? body.content.map(extractTextFromADF).join("\n") : "");
+      // Skip our own bot comments
+      if (text.includes("✅") || text.includes("❌") || text.includes("⚠️") || text.includes("Результат обработки")) continue;
+      commentTexts.push(text);
+    }
+    const result = commentTexts.join("\n");
+    console.log(`[${VERSION}] Fetched ${comments.length} comments for ${issueKey}, extracted ${commentTexts.length} non-bot texts (${result.length} chars)`);
+    return result;
+  } catch (e: any) {
+    console.error(`[${VERSION}] Failed to fetch Jira comments:`, e);
+    return "";
+  }
+}
 
 async function addJiraComment(settings: Record<string, string>, auth: string, issueKey: string, body: string) {
   try {
@@ -987,10 +1066,20 @@ async function executeUpdateReceiver(
       if (newReceiver) {
         if (newReceiver.full_name) {
           beforeState.full_name = receiver.full_name;
+          beforeState.entity = receiver.entity;
           updatePayload.full_name = newReceiver.full_name;
-          // Also update title to match full_name (required field)
           updatePayload.title = newReceiver.full_name;
+          updatePayload.entity = newReceiver.entity || newReceiver.full_name;
           afterState.full_name = newReceiver.full_name;
+          afterState.entity = updatePayload.entity;
+        }
+        if (newReceiver.entity && !newReceiver.full_name) {
+          beforeState.entity = receiver.entity;
+          updatePayload.entity = newReceiver.entity;
+          updatePayload.title = newReceiver.entity;
+          updatePayload.full_name = newReceiver.entity;
+          afterState.entity = newReceiver.entity;
+          afterState.full_name = newReceiver.entity;
         }
         if (newReceiver.phone) {
           beforeState.phone = receiver.phone;
@@ -1768,9 +1857,20 @@ async function executeUpdateSender(
       if (newSender) {
         if (newSender.full_name) {
           beforeState.full_name = sender.full_name;
+          beforeState.entity = sender.entity;
           updatePayload.full_name = newSender.full_name;
           updatePayload.title = newSender.full_name;
+          updatePayload.entity = newSender.entity || newSender.full_name;
           afterState.full_name = newSender.full_name;
+          afterState.entity = updatePayload.entity;
+        }
+        if (newSender.entity && !newSender.full_name) {
+          beforeState.entity = sender.entity;
+          updatePayload.entity = newSender.entity;
+          updatePayload.title = newSender.entity;
+          updatePayload.full_name = newSender.entity;
+          afterState.entity = newSender.entity;
+          afterState.full_name = newSender.entity;
         }
         if (newSender.phone) {
           beforeState.phone = sender.phone;
