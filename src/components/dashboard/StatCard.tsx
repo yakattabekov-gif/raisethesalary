@@ -9,25 +9,26 @@ interface StatCardProps {
 }
 
 const StatCard = ({ title, value, subtitle, icon: Icon, status }: StatCardProps) => {
+  const iconColor = status === "success" ? "text-primary" : 
+    status === "error" ? "text-destructive" : 
+    status === "warning" ? "text-warning" : "text-muted-foreground";
+
   return (
-    <div className="bg-card border border-border rounded-lg p-5 card-glow">
-      <div className="flex items-start justify-between">
-        <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{title}</p>
-          <p className="text-2xl font-semibold font-mono text-foreground">{value}</p>
-          {subtitle && (
-            <p className="text-xs text-muted-foreground">{subtitle}</p>
-          )}
+    <div className="glass-card glow-border p-5 animate-slide-in">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+          status === "success" ? "bg-primary/10" :
+          status === "error" ? "bg-destructive/10" :
+          status === "warning" ? "bg-warning/10" : "bg-secondary"
+        }`}>
+          <Icon className={`w-5 h-5 ${iconColor}`} />
         </div>
-        <div className="w-9 h-9 rounded-md bg-secondary flex items-center justify-center">
-          <Icon className="w-4 h-4 text-muted-foreground" />
-        </div>
+        {status && <span className={`status-dot-${status}`} />}
       </div>
-      {status && (
-        <div className="mt-3 flex items-center gap-1.5">
-          <span className={`status-dot-${status}`} />
-          <span className="text-[11px] text-muted-foreground font-mono capitalize">{status}</span>
-        </div>
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">{title}</p>
+      <p className="text-3xl font-bold font-mono text-foreground tracking-tight">{value}</p>
+      {subtitle && (
+        <p className="text-[12px] text-muted-foreground mt-1">{subtitle}</p>
       )}
     </div>
   );
