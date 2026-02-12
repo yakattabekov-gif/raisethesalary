@@ -33,22 +33,30 @@ async function checkOrderRestored(invoiceNumber: string, sparkToken: string): Pr
       {
         headers: {
           Authorization: `Bearer ${sparkToken}`,
-          "Accept": "application/json",
+          Accept: "application/json",
         },
-      }
+      },
     );
     if (!historyResp.ok) {
       console.log(`[${VERSION}] order-statuses history failed for ${invoiceNumber}: ${historyResp.status}`);
       return false;
     }
     const historyData = await historyResp.json();
-    console.log(`[${VERSION}] Order ${invoiceNumber} raw history sample:`, JSON.stringify(historyData).substring(0, 1500));
-    const statuses = Array.isArray(historyData) ? historyData : (historyData.data || historyData.statuses || historyData.result || []);
-    
+    console.log(
+      `[${VERSION}] Order ${invoiceNumber} raw history sample:`,
+      JSON.stringify(historyData).substring(0, 1500),
+    );
+    const statuses = Array.isArray(historyData)
+      ? historyData
+      : historyData.data || historyData.statuses || historyData.result || [];
+
     // Look for restoration status code 233
-    const statusCodes = statuses.map((s: any) => ({ code: s.status?.code || s.status_code || s.code, name: s.status?.name || s.status_name || s.name }));
+    const statusCodes = statuses.map((s: any) => ({
+      code: s.status?.code || s.status_code || s.code,
+      name: s.status?.name || s.status_name || s.name,
+    }));
     console.log(`[${VERSION}] Order ${invoiceNumber} history codes:`, JSON.stringify(statusCodes).substring(0, 1000));
-    const hasRestoration = statuses.some((s: any) => (s.status?.code === 233) || (s.status_code === 233) || (s.code === 233));
+    const hasRestoration = statuses.some((s: any) => s.status?.code === 233 || s.status_code === 233 || s.code === 233);
     console.log(`[${VERSION}] Order ${invoiceNumber} history: ${statuses.length} statuses, restored=${hasRestoration}`);
     return hasRestoration;
   } catch (e: any) {
@@ -70,11 +78,7 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
-  const { data: cronRun } = await supabase
-    .from("cron_runs")
-    .insert({ status: "running" })
-    .select()
-    .single();
+  const { data: cronRun } = await supabase.from("cron_runs").insert({ status: "running" }).select().single();
 
   try {
     const { data: settingsData } = await supabase.from("settings").select("*");
@@ -98,7 +102,7 @@ serve(async (req) => {
           Authorization: `Basic ${jiraAuth}`,
           "Content-Type": "application/json",
         },
-      }
+      },
     );
 
     if (!jiraResponse.ok) {
@@ -107,14 +111,11 @@ serve(async (req) => {
     }
 
     const jiraData = await jiraResponse.json();
-    console.log(`[${VERSION}] Jira response keys: ${Object.keys(jiraData).join(', ')}`);
+    console.log(`[${VERSION}] Jira response keys: ${Object.keys(jiraData).join(", ")}`);
     const issues = jiraData.issues || [];
     console.log(`[${VERSION}] Found ${issues.length} issues`);
 
-    await supabase
-      .from("cron_runs")
-      .update({ tasks_found: issues.length })
-      .eq("id", cronRun?.id);
+    await supabase.from("cron_runs").update({ tasks_found: issues.length }).eq("id", cronRun?.id);
 
     let processedCount = 0;
 
@@ -127,8 +128,16 @@ serve(async (req) => {
         .eq("jira_issue_key", issueKey)
         .single();
 
-      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || existing.retry_count >= 2)) {
-        console.log(`[${VERSION}] Skipping ${issueKey}: status=${existing.status}, retry_count=${existing.retry_count}`);
+      if (
+        existing &&
+        (existing.status === "completed" ||
+          existing.status === "ignored" ||
+          existing.status === "processing" ||
+          existing.retry_count >= 2)
+      ) {
+        console.log(
+          `[${VERSION}] Skipping ${issueKey}: status=${existing.status}, retry_count=${existing.retry_count}`,
+        );
         continue;
       }
 
@@ -144,12 +153,18 @@ serve(async (req) => {
         return "";
       };
       const descriptionField = issue.fields?.description;
-      const description = typeof descriptionField === "string"
-        ? descriptionField
-        : descriptionField?.content
-          ? descriptionField.content.map((block: any) => extractTextFromADF(block)).filter(Boolean).join("\n")
-          : "";
-      console.log(`[${VERSION}] Issue ${issueKey}: summary="${summary}", description="${description}", raw_desc_type=${typeof descriptionField}`);
+      const description =
+        typeof descriptionField === "string"
+          ? descriptionField
+          : descriptionField?.content
+            ? descriptionField.content
+                .map((block: any) => extractTextFromADF(block))
+                .filter(Boolean)
+                .join("\n")
+            : "";
+      console.log(
+        `[${VERSION}] Issue ${issueKey}: summary="${summary}", description="${description}", raw_desc_type=${typeof descriptionField}`,
+      );
 
       let taskId: string;
       if (existing) {
@@ -225,7 +240,6 @@ serve(async (req) => {
             results.forEach((r: any) => {
               allCommentLines.push(r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`);
             });
-
           } else if (actionItem.action === "update_receiver") {
             // Skip update for invoices that will be cancelled in the same ticket
             const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
@@ -242,9 +256,10 @@ serve(async (req) => {
             if (!ok) allSuccess = false;
             if (results.some((r: any) => r.success)) anySuccess = true;
             results.forEach((r: any) => {
-              allCommentLines.push(r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`);
+              allCommentLines.push(
+                r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`,
+              );
             });
-
           } else if (actionItem.action === "update_payment") {
             // Skip update for invoices that will be cancelled
             const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
@@ -278,7 +293,11 @@ serve(async (req) => {
             if (!ok) allSuccess = false;
             if (results.some((r: any) => r.success)) anySuccess = true;
             results.forEach((r: any) => {
-              allCommentLines.push(r.success ? `✅ ${r.invoice}: направление изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`);
+              allCommentLines.push(
+                r.success
+                  ? `✅ ${r.invoice}: направление изменено на ${r.city || actionItem.city}`
+                  : `❌ ${r.invoice}: ${r.error}`,
+              );
             });
           } else if (actionItem.action === "change_shipment_type") {
             const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
@@ -296,12 +315,14 @@ serve(async (req) => {
             if (results.some((r: any) => r.success)) anySuccess = true;
             const typeLabel = actionItem.shipment_type === 2 ? "Авиа (Экспресс)" : "Авто (Стандарт)";
             results.forEach((r: any) => {
-              allCommentLines.push(r.success ? `✅ ${r.invoice}: тип перевозки изменён на ${typeLabel}` : `❌ ${r.invoice}: ${r.error}`);
+              allCommentLines.push(
+                r.success ? `✅ ${r.invoice}: тип перевозки изменён на ${typeLabel}` : `❌ ${r.invoice}: ${r.error}`,
+              );
             });
           }
         }
 
-        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+        const finalStatus = allSuccess ? "completed" : anySuccess ? "completed" : "ignored";
         await supabase
           .from("processed_tasks")
           .update({ status: finalStatus, execution_result: allResults })
@@ -309,8 +330,11 @@ serve(async (req) => {
 
         // Post comment with all results
         if (anySuccess && allCommentLines.length > 0) {
-          await addJiraComment(settings, jiraAuth, issueKey,
-            `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обработки:\n${allCommentLines.join("\n")}`
+          await addJiraComment(
+            settings,
+            jiraAuth,
+            issueKey,
+            `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обработки:\n${allCommentLines.join("\n")}`,
           );
         }
 
@@ -329,8 +353,11 @@ serve(async (req) => {
           .update({ status: "error", execution_result: { error: taskError.message } })
           .eq("id", taskId);
         await supabase.from("execution_logs").insert({
-          task_id: taskId, action: "process_error", step: "main_loop",
-          success: false, error_message: taskError.message,
+          task_id: taskId,
+          action: "process_error",
+          step: "main_loop",
+          success: false,
+          error_message: taskError.message,
         });
       }
     }
@@ -369,8 +396,11 @@ serve(async (req) => {
 // ---- AI Parsing via OpenAI GPT-4o-mini ----
 
 async function parseWithAI(
-  settings: Record<string, string>, summary: string, description: string,
-  supabase: any, taskId: string
+  settings: Record<string, string>,
+  summary: string,
+  description: string,
+  supabase: any,
+  taskId: string,
 ) {
   const apiKey = settings.openai_api_key;
   if (!apiKey) throw new Error("OpenAI API Key not configured in settings");
@@ -586,9 +616,12 @@ async function parseWithAI(
   }
 
   await supabase.from("execution_logs").insert({
-    task_id: taskId, action: "ai_parse", step: "parse_ticket",
+    task_id: taskId,
+    action: "ai_parse",
+    step: "parse_ticket",
     request_data: { summary, description },
-    response_data: aiResult, success: true,
+    response_data: aiResult,
+    success: true,
   });
 
   return aiResult;
@@ -604,7 +637,8 @@ async function addJiraComment(settings: Record<string, string>, auth: string, is
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         body: {
-          type: "doc", version: 1,
+          type: "doc",
+          version: 1,
           content: [{ type: "paragraph", content: [{ type: "text", text: body }] }],
         },
       }),
@@ -625,27 +659,34 @@ async function transitionJiraIssue(settings: Record<string, string>, auth: strin
     const baseUrl = settings.jira_base_url.replace(/\/+$/, "");
     const url = `${baseUrl}/rest/api/3/issue/${issueKey}/transitions`;
     console.log(`[${VERSION}] Getting transitions for ${issueKey}: ${url}`);
-    
+
     const transResp = await fetch(url, {
       headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
     });
-    
+
     if (!transResp.ok) {
       const errText = await transResp.text();
       console.error(`[${VERSION}] Failed to get transitions: ${transResp.status} - ${errText}`);
       return;
     }
-    
+
     const transData = await transResp.json();
-    console.log(`[${VERSION}] Available transitions for ${issueKey}:`, JSON.stringify(transData.transitions?.map((t: any) => ({ id: t.id, name: t.name }))));
-    
-    const doneTransition = transData.transitions?.find(
-      (t: any) => {
-        const name = t.name.toLowerCase();
-        return name.includes("done") || name.includes("готово") || name.includes("закрыт") || name.includes("выполнен") || name.includes("resolved");
-      }
+    console.log(
+      `[${VERSION}] Available transitions for ${issueKey}:`,
+      JSON.stringify(transData.transitions?.map((t: any) => ({ id: t.id, name: t.name }))),
     );
-    
+
+    const doneTransition = transData.transitions?.find((t: any) => {
+      const name = t.name.toLowerCase();
+      return (
+        name.includes("done") ||
+        name.includes("готово") ||
+        name.includes("закрыт") ||
+        name.includes("выполнен") ||
+        name.includes("resolved")
+      );
+    });
+
     if (doneTransition) {
       console.log(`[${VERSION}] Transitioning ${issueKey} to "${doneTransition.name}" (id: ${doneTransition.id})`);
       const postResp = await fetch(url, {
@@ -660,7 +701,9 @@ async function transitionJiraIssue(settings: Record<string, string>, auth: strin
         console.log(`[${VERSION}] Transition successful for ${issueKey}`);
       }
     } else {
-      console.error(`[${VERSION}] No "done" transition found for ${issueKey}. Available: ${JSON.stringify(transData.transitions?.map((t: any) => t.name))}`);
+      console.error(
+        `[${VERSION}] No "done" transition found for ${issueKey}. Available: ${JSON.stringify(transData.transitions?.map((t: any) => t.name))}`,
+      );
     }
   } catch (e) {
     console.error(`[${VERSION}] Failed to transition Jira issue ${issueKey}:`, e);
@@ -670,7 +713,11 @@ async function transitionJiraIssue(settings: Record<string, string>, auth: strin
 // ---- Cancel Orders ----
 
 async function executeCancelOrders(
-  supabase: any, settings: Record<string, string>, invoices: string[], taskId: string, dryRun: boolean
+  supabase: any,
+  settings: Record<string, string>,
+  invoices: string[],
+  taskId: string,
+  dryRun: boolean,
 ) {
   const results = [];
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
@@ -680,7 +727,7 @@ async function executeCancelOrders(
     try {
       const searchResp = await fetch(
         `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
+        { headers: { Authorization: `Bearer ${sparkToken}` } },
       );
       if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
       const searchData = await searchResp.json();
@@ -689,9 +736,12 @@ async function executeCancelOrders(
       if (!item?.id) throw new Error("Invoice not found");
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "cancel", step: "search_invoice",
+        task_id: taskId,
+        action: "cancel",
+        step: "search_invoice",
         request_data: { invoice },
-        response_data: { id: item.id, status: item.status }, success: true,
+        response_data: { id: item.id, status: item.status },
+        success: true,
       });
 
       if (dryRun) {
@@ -699,22 +749,29 @@ async function executeCancelOrders(
         continue;
       }
 
-      const cancelResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}/cancel`,
-        { method: "POST", headers: { Authorization: `Bearer ${sparkToken}` } }
-      );
+      const cancelResp = await fetch(`${sparkUrl}/logistics-info/${item.id}/cancel`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sparkToken}` },
+      });
       if (!cancelResp.ok) throw new Error(`Cancel failed: ${cancelResp.status}`);
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "cancel", step: "cancel_invoice",
+        task_id: taskId,
+        action: "cancel",
+        step: "cancel_invoice",
         request_data: { id: item.id },
-        response_data: { status: cancelResp.status }, success: true,
+        response_data: { status: cancelResp.status },
+        success: true,
       });
       results.push({ invoice, success: true, spark_id: item.id });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "cancel", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
+        task_id: taskId,
+        action: "cancel",
+        step: "error",
+        success: false,
+        error_message: e.message,
+        request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
     }
@@ -725,7 +782,11 @@ async function executeCancelOrders(
 // ---- Update Receiver (address + name + phone) ----
 
 async function executeUpdateReceiver(
-  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+  supabase: any,
+  settings: Record<string, string>,
+  aiResult: any,
+  taskId: string,
+  dryRun: boolean,
 ) {
   const results = [];
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
@@ -739,7 +800,7 @@ async function executeUpdateReceiver(
       // 1. Search for invoice to get logistics-info ID
       const searchResp = await fetch(
         `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
+        { headers: { Authorization: `Bearer ${sparkToken}` } },
       );
       if (!searchResp.ok) throw new Error(`Search logistics-info failed: ${searchResp.status}`);
       const searchData = await searchResp.json();
@@ -750,8 +811,11 @@ async function executeUpdateReceiver(
       // Check if order is already cancelled (by status name only, not by status.id which is just a sequential ID)
       const orderStatus = item.status?.name || item.status || "";
       const orderStatusCode = item.status?.code || null;
-      const isCancelledStatus = orderStatus.toLowerCase().includes("отмен") || orderStatus.toLowerCase().includes("cancel") || orderStatusCode === 503;
-      
+      const isCancelledStatus =
+        orderStatus.toLowerCase().includes("отмен") ||
+        orderStatus.toLowerCase().includes("cancel") ||
+        orderStatusCode === 503;
+
       if (isCancelledStatus) {
         // Check order-statuses history for restoration (code 233)
         const isRestored = await checkOrderRestored(invoice, sparkToken);
@@ -764,16 +828,13 @@ async function executeUpdateReceiver(
       }
 
       // 2. GET full logistics-info by ID for complete receiver data
-      const fullResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${sparkToken}`,
-            "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (compatible; spark-bot/1.0)",
-          },
-        }
-      );
+      const fullResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; spark-bot/1.0)",
+        },
+      });
       if (!fullResp.ok) {
         const errBody = await fullResp.text().catch(() => "");
         throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status} - ${errBody}`);
@@ -799,12 +860,25 @@ async function executeUpdateReceiver(
       if (!receiver?.id) throw new Error("Receiver not found in full logistics-info");
 
       const receiverCity = receiver.city?.name || receiver.city || "";
-      console.log(`[${VERSION}] Full receiver: id=${receiver.id}, city="${receiverCity}", title="${receiver.title}", phone="${receiver.phone}"`);
+      console.log(
+        `[${VERSION}] Full receiver: id=${receiver.id}, city="${receiverCity}", title="${receiver.title}", phone="${receiver.phone}"`,
+      );
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "get_full_logistics_info",
+        task_id: taskId,
+        action: "update_receiver",
+        step: "get_full_logistics_info",
         request_data: { invoice, logistics_info_id: item.id },
-        response_data: { receiver_id: receiver.id, city: receiverCity, title: receiver.title, full_name: receiver.full_name, phone: receiver.phone, city_id: receiver.city_id, latitude: receiver.latitude, longitude: receiver.longitude },
+        response_data: {
+          receiver_id: receiver.id,
+          city: receiverCity,
+          title: receiver.title,
+          full_name: receiver.full_name,
+          phone: receiver.phone,
+          city_id: receiver.city_id,
+          latitude: receiver.latitude,
+          longitude: receiver.longitude,
+        },
         success: true,
       });
 
@@ -815,7 +889,7 @@ async function executeUpdateReceiver(
         full_name: receiver.full_name,
         phone: receiver.phone,
         additional_phone: receiver.additional_phone || null,
-        city_id: typeof receiver.city_id === 'number' ? receiver.city_id : Number(receiver.city_id),
+        city_id: typeof receiver.city_id === "number" ? receiver.city_id : Number(receiver.city_id),
         latitude: receiver.latitude != null ? Number(receiver.latitude) : null,
         longitude: receiver.longitude != null ? Number(receiver.longitude) : null,
         street: receiver.street || "",
@@ -843,12 +917,14 @@ async function executeUpdateReceiver(
         const requestedCity = newAddress.city || null;
         const effectiveCity = requestedCity || receiverCity;
 
-        if (requestedCity && receiverCity &&
-          requestedCity.toLowerCase() !== receiverCity.toLowerCase()) {
+        if (requestedCity && receiverCity && requestedCity.toLowerCase() !== receiverCity.toLowerCase()) {
           const error = `Город не совпадает: запрос="${requestedCity}" vs заказ="${receiverCity}". Обновление отклонено.`;
           await supabase.from("execution_logs").insert({
-            task_id: taskId, action: "update_receiver", step: "city_check",
-            success: false, error_message: error,
+            task_id: taskId,
+            action: "update_receiver",
+            step: "city_check",
+            success: false,
+            error_message: error,
           });
           results.push({ invoice, success: false, error });
           continue;
@@ -864,9 +940,9 @@ async function executeUpdateReceiver(
           {
             headers: {
               "User-Agent": "Mozilla/5.0 (compatible; spark-bot/1.0)",
-              "Authorization": `Bearer ${sparkToken}`,
+              Authorization: `Bearer ${sparkToken}`,
             },
-          }
+          },
         );
         const geoData = await geoResp.json();
         const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
@@ -880,9 +956,13 @@ async function executeUpdateReceiver(
         }
 
         await supabase.from("execution_logs").insert({
-          task_id: taskId, action: "update_receiver", step: "geocoding_yandex",
+          task_id: taskId,
+          action: "update_receiver",
+          step: "geocoding_yandex",
           request_data: { query: geoQuery },
-          response_data: geoMember ? { pos, formatted: geoMember.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
+          response_data: geoMember
+            ? { pos, formatted: geoMember.metaDataProperty?.GeocoderMetaData?.text }
+            : { error: "No results" },
           success: !!geoMember,
         });
 
@@ -920,9 +1000,12 @@ async function executeUpdateReceiver(
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "before_after",
+        task_id: taskId,
+        action: "update_receiver",
+        step: "before_after",
         request_data: { before: beforeState },
-        response_data: { after: afterState, payload_keys: Object.keys(updatePayload) }, success: true,
+        response_data: { after: afterState, payload_keys: Object.keys(updatePayload) },
+        success: true,
       });
 
       if (dryRun) {
@@ -943,21 +1026,30 @@ async function executeUpdateReceiver(
 
       if (!updateResp.ok) {
         const errBody = await updateResp.text().catch(() => "");
-        console.error(`[${VERSION}] Update receiver failed: ${updateResp.status}, payload: ${JSON.stringify(updatePayload)}, body: ${errBody.substring(0, 500)}`);
+        console.error(
+          `[${VERSION}] Update receiver failed: ${updateResp.status}, payload: ${JSON.stringify(updatePayload)}, body: ${errBody.substring(0, 500)}`,
+        );
         throw new Error(`Update receiver failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "update_receiver_api",
+        task_id: taskId,
+        action: "update_receiver",
+        step: "update_receiver_api",
         request_data: { receiver_id: receiver.id, payload_keys: Object.keys(afterState) },
-        response_data: { status: updateResp.status }, success: true,
+        response_data: { status: updateResp.status },
+        success: true,
       });
 
       results.push({ invoice, success: true, changes: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_receiver", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
+        task_id: taskId,
+        action: "update_receiver",
+        step: "error",
+        success: false,
+        error_message: e.message,
+        request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
     }
@@ -968,7 +1060,11 @@ async function executeUpdateReceiver(
 // ---- Update Payment (payment_type, payment_method, cash_sum) ----
 
 async function executeUpdatePayment(
-  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+  supabase: any,
+  settings: Record<string, string>,
+  aiResult: any,
+  taskId: string,
+  dryRun: boolean,
 ) {
   const results = [];
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
@@ -981,7 +1077,7 @@ async function executeUpdatePayment(
       // 1. Search for invoice
       const searchResp = await fetch(
         `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
+        { headers: { Authorization: `Bearer ${sparkToken}` } },
       );
       if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
       const searchData = await searchResp.json();
@@ -990,21 +1086,20 @@ async function executeUpdatePayment(
       if (!item?.id) throw new Error("Invoice not found");
 
       // 2. GET full logistics-info to get current data
-      const fullResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${sparkToken}`,
-            "Accept": "application/json",
-          },
-        }
-      );
+      const fullResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          Accept: "application/json",
+        },
+      });
       if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
       const fullData = await fullResp.json();
       const logisticsInfo = fullData.data || fullData;
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_payment", step: "get_logistics_info",
+        task_id: taskId,
+        action: "update_payment",
+        step: "get_logistics_info",
         request_data: { invoice, logistics_info_id: item.id },
         response_data: {
           current_payment_type: logisticsInfo.payment_type,
@@ -1016,7 +1111,17 @@ async function executeUpdatePayment(
 
       // 3. Build PUT payload from existing data, override only payment fields
       const updatePayload: any = {
-        additional_service: logisticsInfo.additional_service || { hasCar: false, hasSoftPackage: false, hasRisingToTheFloor: false, hasManipulator: false, hasCrane: false, hasHydraulicTrolley: false, hasGrid: false, hasLoader: false, hasPallet: false },
+        additional_service: logisticsInfo.additional_service || {
+          hasCar: false,
+          hasSoftPackage: false,
+          hasRisingToTheFloor: false,
+          hasManipulator: false,
+          hasCrane: false,
+          hasHydraulicTrolley: false,
+          hasGrid: false,
+          hasLoader: false,
+          hasPallet: false,
+        },
         product_name: logisticsInfo.product_name || "-",
         dop_invoice_number: logisticsInfo.dop_invoice_number || null,
         annotation: logisticsInfo.annotation || null,
@@ -1033,8 +1138,12 @@ async function executeUpdatePayment(
         cargo_name: logisticsInfo.cargo_name || null,
         should_return_document: Number(logisticsInfo.should_return_document) || 0,
         shipment_type: Number(logisticsInfo.shipment_type) || 1,
-        payment_type: Number(paymentData.payment_type ?? logisticsInfo.payment_type ?? 2),
-        payment_method: Number(paymentData.payment_method ?? logisticsInfo.payment_method ?? 4),
+        payment_type: Number.isInteger(parseInt(paymentData.payment_type ?? logisticsInfo.payment_type, 10))
+          ? parseInt(paymentData.payment_type ?? logisticsInfo.payment_type, 10)
+          : 2,
+        payment_method: Number.isInteger(parseInt(paymentData.payment_method ?? logisticsInfo.payment_method, 10))
+          ? parseInt(paymentData.payment_method ?? logisticsInfo.payment_method, 10)
+          : 4,
         verify: logisticsInfo.verify || null,
         is_dangerous: Number(logisticsInfo.is_dangerous) || 0,
         temperature_regime_type_id: logisticsInfo.temperature_regime_type_id || null,
@@ -1062,9 +1171,12 @@ async function executeUpdatePayment(
       };
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_payment", step: "before_after",
+        task_id: taskId,
+        action: "update_payment",
+        step: "before_after",
         request_data: { before: beforeState },
-        response_data: { after: afterState }, success: true,
+        response_data: { after: afterState },
+        success: true,
       });
 
       if (dryRun) {
@@ -1089,16 +1201,23 @@ async function executeUpdatePayment(
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_payment", step: "update_payment_api",
+        task_id: taskId,
+        action: "update_payment",
+        step: "update_payment_api",
         request_data: { logistics_info_id: item.id },
-        response_data: { status: updateResp.status, changes: afterState }, success: true,
+        response_data: { status: updateResp.status, changes: afterState },
+        success: true,
       });
 
       results.push({ invoice, success: true, changes: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "update_payment", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
+        task_id: taskId,
+        action: "update_payment",
+        step: "error",
+        success: false,
+        error_message: e.message,
+        request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
     }
@@ -1109,7 +1228,11 @@ async function executeUpdatePayment(
 // ---- Change Direction (city_id update on receiver) ----
 
 async function executeChangeDirection(
-  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+  supabase: any,
+  settings: Record<string, string>,
+  aiResult: any,
+  taskId: string,
+  dryRun: boolean,
 ) {
   const results = [];
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
@@ -1125,9 +1248,14 @@ async function executeChangeDirection(
   const separators = [" - ", " – ", " — ", "-"];
   for (const sep of separators) {
     if (targetCity.includes(sep)) {
-      const parts = targetCity.split(sep).map((p: string) => p.trim()).filter(Boolean);
+      const parts = targetCity
+        .split(sep)
+        .map((p: string) => p.trim())
+        .filter(Boolean);
       if (parts.length >= 2) {
-        console.log(`[${VERSION}] City pair detected: "${targetCity}" → taking destination: "${parts[parts.length - 1]}"`);
+        console.log(
+          `[${VERSION}] City pair detected: "${targetCity}" → taking destination: "${parts[parts.length - 1]}"`,
+        );
         targetCity = parts[parts.length - 1];
       }
       break;
@@ -1135,26 +1263,30 @@ async function executeChangeDirection(
   }
 
   // Fuzzy city lookup
-  const { data: allCities } = await supabase
-    .from("spark_cities")
-    .select("id, name");
+  const { data: allCities } = await supabase.from("spark_cities").select("id, name");
 
   if (!allCities || allCities.length === 0) {
     return invoices.map((inv: string) => ({ invoice: inv, success: false, error: "Справочник городов пуст" }));
   }
 
-  const normalize = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/[\s-]+/g, " ").trim();
+  const normalize = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[\s-]+/g, " ")
+      .trim();
   const normalizedTarget = normalize(targetCity);
 
   // Levenshtein distance
   function levenshtein(a: string, b: string): number {
-    const m = a.length, n = b.length;
+    const m = a.length,
+      n = b.length;
     const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
     for (let i = 1; i <= m; i++)
       for (let j = 1; j <= n; j++)
-        dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+        dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
     return dp[m][n];
   }
 
@@ -1181,27 +1313,35 @@ async function executeChangeDirection(
 
   if (!bestMatch) {
     await supabase.from("execution_logs").insert({
-      task_id: taskId, action: "change_direction", step: "city_lookup",
-      success: false, error_message: `Город "${targetCity}" не найден в справочнике (fuzzy)`,
+      task_id: taskId,
+      action: "change_direction",
+      step: "city_lookup",
+      success: false,
+      error_message: `Город "${targetCity}" не найден в справочнике (fuzzy)`,
     });
     return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${targetCity}" не найден` }));
   }
 
   var cityId = bestMatch.id;
   var cityName = bestMatch.name;
-  console.log(`[${VERSION}] City fuzzy match: "${targetCity}" → id=${cityId}, name="${cityName}" (distance=${bestScore})`);
+  console.log(
+    `[${VERSION}] City fuzzy match: "${targetCity}" → id=${cityId}, name="${cityName}" (distance=${bestScore})`,
+  );
 
   await supabase.from("execution_logs").insert({
-    task_id: taskId, action: "change_direction", step: "city_lookup",
+    task_id: taskId,
+    action: "change_direction",
+    step: "city_lookup",
     request_data: { requested_city: targetCity },
-    response_data: { city_id: cityId, city_name: cityName }, success: true,
+    response_data: { city_id: cityId, city_name: cityName },
+    success: true,
   });
 
   for (const invoice of invoices) {
     try {
       // 1. Check invoice status via public endpoint (no auth needed)
       const statusResp = await fetch(
-        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`,
       );
       if (statusResp.ok) {
         const statusData = await statusResp.json();
@@ -1225,9 +1365,12 @@ async function executeChangeDirection(
         if (inTransit && inTransit.state === "completed") {
           console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
           await supabase.from("execution_logs").insert({
-            task_id: taskId, action: "change_direction", step: "status_check",
+            task_id: taskId,
+            action: "change_direction",
+            step: "status_check",
             request_data: { invoice },
-            response_data: { status: inTransit }, success: false,
+            response_data: { status: inTransit },
+            success: false,
             error_message: "Груз уже в пути — смена направления невозможна",
           });
           results.push({ invoice, success: false, error: "Груз уже в пути — смена направления невозможна" });
@@ -1236,14 +1379,18 @@ async function executeChangeDirection(
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "status_check",
-        request_data: { invoice }, response_data: { passed: true }, success: true,
+        task_id: taskId,
+        action: "change_direction",
+        step: "status_check",
+        request_data: { invoice },
+        response_data: { passed: true },
+        success: true,
       });
 
       // 2. Search for invoice to get logistics-info
       const searchResp = await fetch(
         `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
+        { headers: { Authorization: `Bearer ${sparkToken}` } },
       );
       if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
       const searchData = await searchResp.json();
@@ -1252,10 +1399,9 @@ async function executeChangeDirection(
       if (!item?.id) throw new Error("Invoice not found");
 
       // 3. GET full logistics-info for receiver data
-      const fullResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}`,
-        { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
-      );
+      const fullResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        headers: { Authorization: `Bearer ${sparkToken}`, Accept: "application/json" },
+      });
       if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
       const fullData = await fullResp.json();
       const logisticsInfo = fullData.data || fullData;
@@ -1271,14 +1417,17 @@ async function executeChangeDirection(
         const match = addr.match(cityPattern);
         if (match) {
           // Verify the extracted part looks like a city name (not a street)
-          const extracted = match[0].replace(/^г\.?\s*/, "").replace(/\s*,\s*$/, "").trim();
+          const extracted = match[0]
+            .replace(/^г\.?\s*/, "")
+            .replace(/\s*,\s*$/, "")
+            .trim();
           const normalizedExtracted = extracted.toLowerCase().replace(/ё/g, "е");
           // Check against known cities in allCities or common city patterns
           const isCity = allCities?.some((c: any) => {
             const norm = c.name.toLowerCase().replace(/ё/g, "е");
-            return norm === normalizedExtracted || 
-                   normalizedExtracted.includes(norm) || 
-                   norm.includes(normalizedExtracted);
+            return (
+              norm === normalizedExtracted || normalizedExtracted.includes(norm) || norm.includes(normalizedExtracted)
+            );
           });
           if (isCity) {
             console.log(`[${VERSION}] Stripped city "${extracted}" from address: "${addr}"`);
@@ -1302,7 +1451,7 @@ async function executeChangeDirection(
           console.log(`[${VERSION}] Geocoding address in new city: "${geoQuery}"`);
           try {
             const geoResp = await fetch(
-              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
+              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`,
             );
             const geoData = await geoResp.json();
             const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
@@ -1316,21 +1465,30 @@ async function executeChangeDirection(
               console.log(`[${VERSION}] Geocoded in ${cityName}: lat=${lat}, lon=${lon}, addr="${formattedAddr}"`);
             }
             await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "geocoding_new_city",
+              task_id: taskId,
+              action: "change_direction",
+              step: "geocoding_new_city",
               request_data: { query: geoQuery },
-              response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
+              response_data: geoMember
+                ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text }
+                : { error: "No results" },
               success: !!geoMember,
             });
           } catch (geoErr: any) {
             console.warn(`[${VERSION}] Geocoding failed for direction change: ${geoErr.message}`);
             await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "geocoding_new_city",
+              task_id: taskId,
+              action: "change_direction",
+              step: "geocoding_new_city",
               request_data: { query: `${cityName}, ${currentStreet} ${currentHouse}` },
-              success: false, error_message: geoErr.message,
+              success: false,
+              error_message: geoErr.message,
             });
           }
         } else {
-          console.warn(`[${VERSION}] Yandex Geocoder API key not configured — skipping address geocoding for direction change`);
+          console.warn(
+            `[${VERSION}] Yandex Geocoder API key not configured — skipping address geocoding for direction change`,
+          );
         }
       }
 
@@ -1360,18 +1518,40 @@ async function executeChangeDirection(
       const beforeCity = receiver.city?.name || receiver.city_id;
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "before_after",
-        request_data: { before_city: beforeCity, before_city_id: receiver.city_id, before_address: receiver.full_address },
-        response_data: { after_city: cityName, after_city_id: cityId, after_address: newFullAddress, lat: newLatitude, lon: newLongitude }, success: true,
+        task_id: taskId,
+        action: "change_direction",
+        step: "before_after",
+        request_data: {
+          before_city: beforeCity,
+          before_city_id: receiver.city_id,
+          before_address: receiver.full_address,
+        },
+        response_data: {
+          after_city: cityName,
+          after_city_id: cityId,
+          after_address: newFullAddress,
+          lat: newLatitude,
+          lon: newLongitude,
+        },
+        success: true,
       });
 
       if (dryRun) {
-        results.push({ invoice, success: true, dry_run: true, city: cityName, before_city: beforeCity, new_address: newFullAddress });
+        results.push({
+          invoice,
+          success: true,
+          dry_run: true,
+          city: cityName,
+          before_city: beforeCity,
+          new_address: newFullAddress,
+        });
         continue;
       }
 
       // 6. PUT to receivers/{id}
-      console.log(`[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${cityId} (${cityName}), address="${newFullAddress}"`);
+      console.log(
+        `[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${cityId} (${cityName}), address="${newFullAddress}"`,
+      );
       const updateResp = await fetch(`${sparkUrl}/receivers/${receiver.id}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
@@ -1384,16 +1564,23 @@ async function executeChangeDirection(
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "update_direction_api",
+        task_id: taskId,
+        action: "change_direction",
+        step: "update_direction_api",
         request_data: { receiver_id: receiver.id, new_city_id: cityId },
-        response_data: { status: updateResp.status }, success: true,
+        response_data: { status: updateResp.status },
+        success: true,
       });
 
       results.push({ invoice, success: true, city: cityName });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
+        task_id: taskId,
+        action: "change_direction",
+        step: "error",
+        success: false,
+        error_message: e.message,
+        request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
     }
@@ -1404,7 +1591,11 @@ async function executeChangeDirection(
 // ---- Change Shipment Type (Авто=1 / Авиа=2) ----
 
 async function executeChangeShipmentType(
-  supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
+  supabase: any,
+  settings: Record<string, string>,
+  aiResult: any,
+  taskId: string,
+  dryRun: boolean,
 ) {
   const results = [];
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
@@ -1413,20 +1604,29 @@ async function executeChangeShipmentType(
   const newShipmentType = Number(aiResult.shipment_type);
 
   if (![1, 2].includes(newShipmentType)) {
-    return [{ invoice: "N/A", success: false, error: `Неверный shipment_type: ${aiResult.shipment_type}. Допустимые: 1 (Авто), 2 (Авиа)` }];
+    return [
+      {
+        invoice: "N/A",
+        success: false,
+        error: `Неверный shipment_type: ${aiResult.shipment_type}. Допустимые: 1 (Авто), 2 (Авиа)`,
+      },
+    ];
   }
 
   for (const invoice of invoices) {
     try {
       // 1. Check status via public endpoint — only allow if "Груз в пути" (206) is in state "waiting"
       const statusResp = await fetch(
-        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`,
       );
       if (!statusResp.ok) {
         throw new Error(`Status check failed: ${statusResp.status}`);
       }
       const statusData = await statusResp.json();
-      console.log(`[${VERSION}] Invoice ${invoice} status for shipment_type change:`, JSON.stringify(statusData).substring(0, 500));
+      console.log(
+        `[${VERSION}] Invoice ${invoice} status for shipment_type change:`,
+        JSON.stringify(statusData).substring(0, 500),
+      );
 
       let statuses: any[] = [];
       if (Array.isArray(statusData)) {
@@ -1448,25 +1648,37 @@ async function executeChangeShipmentType(
           : `Статус "Груз в пути" (206) не найден — смена типа перевозки невозможна`;
         console.log(`[${VERSION}] Invoice ${invoice}: ${errorMsg}`);
         await supabase.from("execution_logs").insert({
-          task_id: taskId, action: "change_shipment_type", step: "status_check",
+          task_id: taskId,
+          action: "change_shipment_type",
+          step: "status_check",
           request_data: { invoice },
-          response_data: { statuses: statuses.map((s: any) => ({ status_code: s.status_code, status_name: s.status_name, state: s.state })) },
-          success: false, error_message: errorMsg,
+          response_data: {
+            statuses: statuses.map((s: any) => ({
+              status_code: s.status_code,
+              status_name: s.status_name,
+              state: s.state,
+            })),
+          },
+          success: false,
+          error_message: errorMsg,
         });
         results.push({ invoice, success: false, error: errorMsg });
         continue;
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_shipment_type", step: "status_check",
+        task_id: taskId,
+        action: "change_shipment_type",
+        step: "status_check",
         request_data: { invoice },
-        response_data: { status: inTransit, passed: true }, success: true,
+        response_data: { status: inTransit, passed: true },
+        success: true,
       });
 
       // 2. Search for invoice to get logistics-info ID
       const searchResp = await fetch(
         `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
-        { headers: { Authorization: `Bearer ${sparkToken}` } }
+        { headers: { Authorization: `Bearer ${sparkToken}` } },
       );
       if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
       const searchData = await searchResp.json();
@@ -1475,10 +1687,9 @@ async function executeChangeShipmentType(
       if (!item?.id) throw new Error("Invoice not found");
 
       // 3. GET full logistics-info to build PUT payload
-      const fullResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}`,
-        { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
-      );
+      const fullResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        headers: { Authorization: `Bearer ${sparkToken}`, Accept: "application/json" },
+      });
       if (!fullResp.ok) throw new Error(`GET logistics-info/${item.id} failed: ${fullResp.status}`);
       const fullData = await fullResp.json();
       const logisticsInfo = fullData.data || fullData;
@@ -1487,9 +1698,12 @@ async function executeChangeShipmentType(
       const afterState = { shipment_type: newShipmentType };
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_shipment_type", step: "before_after",
+        task_id: taskId,
+        action: "change_shipment_type",
+        step: "before_after",
         request_data: { before: beforeState },
-        response_data: { after: afterState }, success: true,
+        response_data: { after: afterState },
+        success: true,
       });
 
       if (dryRun) {
@@ -1529,7 +1743,9 @@ async function executeChangeShipmentType(
 
       // 5. PUT to logistics-info/{id}
       const typeLabel = newShipmentType === 2 ? "Авиа" : "Авто";
-      console.log(`[${VERSION}] PUT /logistics-info/${item.id} shipment_type change: ${logisticsInfo.shipment_type} → ${newShipmentType} (${typeLabel})`);
+      console.log(
+        `[${VERSION}] PUT /logistics-info/${item.id} shipment_type change: ${logisticsInfo.shipment_type} → ${newShipmentType} (${typeLabel})`,
+      );
       const updateResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
         method: "PUT",
         headers: {
@@ -1545,16 +1761,23 @@ async function executeChangeShipmentType(
       }
 
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_shipment_type", step: "update_shipment_type_api",
+        task_id: taskId,
+        action: "change_shipment_type",
+        step: "update_shipment_type_api",
         request_data: { logistics_info_id: item.id },
-        response_data: { status: updateResp.status, changes: afterState }, success: true,
+        response_data: { status: updateResp.status, changes: afterState },
+        success: true,
       });
 
       results.push({ invoice, success: true, changes: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_shipment_type", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
+        task_id: taskId,
+        action: "change_shipment_type",
+        step: "error",
+        success: false,
+        error_message: e.message,
+        request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
     }
