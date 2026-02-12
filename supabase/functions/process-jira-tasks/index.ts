@@ -1995,9 +1995,9 @@ async function executeUpdateSender(
         continue;
       }
 
-      // 7. PUT to /senders/{order_id}
-      console.log(`[${VERSION}] PUT /senders/${orderId} payload:`, JSON.stringify(updatePayload));
-      const updateResp = await fetch(`${sparkUrl}/senders/${orderId}`, {
+      // 7. PUT to /senders/{sender.id}
+      console.log(`[${VERSION}] PUT /senders/${sender.id} payload:`, JSON.stringify(updatePayload));
+      const updateResp = await fetch(`${sparkUrl}/senders/${sender.id}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(updatePayload),
@@ -2254,9 +2254,9 @@ async function executeChangeSenderDirection(
         continue;
       }
 
-      // 6. PUT to /senders/{order_id}
-      console.log(`[${VERSION}] PUT /senders/${orderId} sender direction: city_id=${cityId} (${cityName})`);
-      const updateResp = await fetch(`${sparkUrl}/senders/${orderId}`, {
+      // 6. PUT to /senders/{sender.id}
+      console.log(`[${VERSION}] PUT /senders/${sender.id} sender direction: city_id=${cityId} (${cityName})`);
+      const updateResp = await fetch(`${sparkUrl}/senders/${sender.id}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
         body: JSON.stringify(updatePayload),
