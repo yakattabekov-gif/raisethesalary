@@ -7,13 +7,13 @@ const Logs = () => {
   const { data: logs, isLoading } = useExecutionLogs();
 
   return (
-    <div className="p-6 lg:p-10 space-y-6 max-w-[1400px]">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Логи</h1>
+        <h1 className="text-2xl font-extrabold text-foreground tracking-tight">Логи</h1>
         <p className="text-sm text-muted-foreground mt-1">Подробные логи выполнения операций</p>
       </div>
 
-      <div className="glass-card overflow-hidden">
+      <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
         <table className="data-table">
           <thead>
             <tr>
@@ -28,50 +28,49 @@ const Logs = () => {
           <tbody>
             {logs?.map((log) => (
               <tr key={log.id}>
-                <td className="font-mono text-xs text-muted-foreground">
+                <td className="text-sm text-muted-foreground">
                   {new Date(log.created_at).toLocaleString()}
                 </td>
-                <td className="text-xs font-mono">{log.action}</td>
-                <td className="text-xs text-muted-foreground">{log.step || "—"}</td>
+                <td className="text-sm text-foreground">{log.action}</td>
+                <td className="text-sm text-muted-foreground">{log.step || "—"}</td>
                 <td>
-                  <span className={`inline-flex items-center gap-2 text-xs font-mono ${
-                    log.success ? "text-primary" : "text-destructive"
-                  }`}>
-                    <span className={log.success ? "status-dot-success" : "status-dot-error"} />
-                    {log.success ? "OK" : "FAIL"}
-                  </span>
+                  {log.success ? (
+                    <span className="pill-success">OK</span>
+                  ) : (
+                    <span className="pill-error">FAIL</span>
+                  )}
                 </td>
-                <td className="text-xs text-destructive truncate max-w-[250px]">
+                <td className="text-sm text-destructive truncate max-w-[250px]">
                   {log.error_message || "—"}
                 </td>
                 <td>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <button className="p-1.5 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
+                      <button className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
                         <Eye className="w-4 h-4" />
                       </button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-2xl bg-card border-border">
+                    <DialogContent className="max-w-2xl">
                       <DialogHeader>
-                        <DialogTitle className="font-mono text-sm">{log.action} — {log.step}</DialogTitle>
+                        <DialogTitle className="text-sm font-semibold">{log.action} — {log.step}</DialogTitle>
                       </DialogHeader>
                       <ScrollArea className="max-h-[60vh]">
                         <div className="space-y-4 text-sm">
                           <div>
-                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Request</p>
-                            <pre className="bg-background rounded-lg p-4 text-xs font-mono overflow-auto text-foreground border border-border/40">
+                            <p className="text-xs text-muted-foreground font-medium mb-1">Request</p>
+                            <pre className="bg-muted rounded-xl p-4 text-xs overflow-auto text-foreground">
                               {log.request_data ? JSON.stringify(log.request_data, null, 2) : "—"}
                             </pre>
                           </div>
                           <div>
-                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Response</p>
-                            <pre className="bg-background rounded-lg p-4 text-xs font-mono overflow-auto text-foreground border border-border/40">
+                            <p className="text-xs text-muted-foreground font-medium mb-1">Response</p>
+                            <pre className="bg-muted rounded-xl p-4 text-xs overflow-auto text-foreground">
                               {log.response_data ? JSON.stringify(log.response_data, null, 2) : "—"}
                             </pre>
                           </div>
                           {log.error_message && (
                             <div>
-                              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1.5">Ошибка</p>
+                              <p className="text-xs text-muted-foreground font-medium mb-1">Ошибка</p>
                               <p className="text-destructive text-sm">{log.error_message}</p>
                             </div>
                           )}
@@ -84,12 +83,12 @@ const Logs = () => {
             ))}
             {isLoading && (
               <tr>
-                <td colSpan={6} className="text-center text-muted-foreground py-12">Загрузка...</td>
+                <td colSpan={6} className="text-center text-muted-foreground py-16">Загрузка...</td>
               </tr>
             )}
             {!isLoading && (!logs || logs.length === 0) && (
               <tr>
-                <td colSpan={6} className="text-center text-muted-foreground py-12">
+                <td colSpan={6} className="text-center text-muted-foreground py-16">
                   Нет логов.
                 </td>
               </tr>

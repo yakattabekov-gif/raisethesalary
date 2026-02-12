@@ -1,10 +1,11 @@
-import { Clock, Activity, CheckCircle2, XCircle, Timer, Play } from "lucide-react";
+import { Activity, CheckCircle2, XCircle, Timer, Play, ArrowRight } from "lucide-react";
 import StatCard from "@/components/dashboard/StatCard";
 import { useCronRuns } from "@/hooks/useCronRuns";
 import { useProcessedTasks } from "@/hooks/useProcessedTasks";
 import { useSettings } from "@/hooks/useSettings";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -22,6 +23,9 @@ const Dashboard = () => {
   const errorCount = tasks?.filter(t => t.status === "error").length ?? 0;
   const totalProcessed = tasks?.length ?? 0;
 
+  // Build sparkline from recent runs
+  const sparklineData = cronRuns?.slice(0, 10).reverse().map(r => r.tasks_processed ?? 0) ?? [];
+
   const handleTrigger = async () => {
     setTriggerLoading(true);
     try {
@@ -35,28 +39,32 @@ const Dashboard = () => {
     }
   };
 
+  const statusPill = (status: string) => {
+    if (status === "completed") return <span className="pill-success">Completed</span>;
+    if (status === "running") return <span className="pill-warning">Running</span>;
+    if (status === "error") return <span className="pill-error">Error</span>;
+    return <span className="pill-idle">{status}</span>;
+  };
+
   return (
-    <div className="p-6 lg:p-10 space-y-8 max-w-[1400px]">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">Dashboard</h1>
+          <h1 className="text-2xl font-extrabold text-foreground tracking-tight">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">Мониторинг автоматизации Jira → Spark</p>
         </div>
-        <div className="flex items-center gap-3">
-          {isDryRun && (
-            <span className="text-[11px] font-mono px-2.5 py-1 rounded-md bg-warning/10 text-warning border border-warning/20">
-              DRY-RUN
-            </span>
-          )}
-          <Button onClick={handleTrigger} disabled={triggerLoading} size="sm" className="gap-2 font-semibold">
-            <Play className="w-3.5 h-3.5" />
-            {triggerLoading ? "Запуск..." : "Запустить"}
-          </Button>
-        </div>
+        <Button
+          onClick={handleTrigger}
+          disabled={triggerLoading}
+          className="rounded-full gap-2 font-semibold shadow-sm"
+        >
+          <Play className="w-3.5 h-3.5" />
+          {triggerLoading ? "Запуск..." : "Запустить"}
+        </Button>
       </div>
 
-      {/* Stats */}
+      {/* Bento Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Статус крона"
@@ -68,9 +76,10 @@ const Dashboard = () => {
         <StatCard
           title="Обработано"
           value={totalProcessed}
-          subtitle="Всего"
+          subtitle="Всего задач"
           icon={Activity}
           status="idle"
+          sparkline={sparklineData.length >= 2 ? sparklineData : undefined}
         />
         <StatCard
           title="Успешно"
@@ -89,14 +98,15 @@ const Dashboard = () => {
       {/* Recent runs */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-foreground">Последние запуски</h2>
+          <h2 className="text-base font-semibold text-foreground">Последние запуски</h2>
           {lastRun && (
-            <span className="text-[11px] font-mono text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {formatDistanceToNow(new Date(lastRun.started_at), { addSuffix: true })}
             </span>
           )}
         </div>
-        <div className="glass-card overflow-hidden">
+
+        <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
           <table className="data-table">
             <thead>
               <tr>
@@ -110,28 +120,20 @@ const Dashboard = () => {
             <tbody>
               {cronRuns?.slice(0, 10).map((run) => (
                 <tr key={run.id}>
-                  <td className="font-mono text-xs text-muted-foreground">
+                  <td className="text-sm text-muted-foreground">
                     {new Date(run.started_at).toLocaleString()}
                   </td>
-                  <td>
-                    <span className={`inline-flex items-center gap-2 text-xs font-mono ${
-                      run.status === "completed" ? "text-primary" :
-                      run.status === "running" ? "text-warning" : "text-destructive"
-                    }`}>
-                      <span className={`status-dot-${run.status === "completed" ? "success" : run.status === "running" ? "warning" : "error"}`} />
-                      {run.status}
-                    </span>
-                  </td>
-                  <td className="font-mono text-xs">{run.tasks_found}</td>
-                  <td className="font-mono text-xs">{run.tasks_processed}</td>
-                  <td className="text-xs text-destructive truncate max-w-[250px]">
+                  <td>{statusPill(run.status)}</td>
+                  <td className="text-sm">{run.tasks_found}</td>
+                  <td className="text-sm">{run.tasks_processed}</td>
+                  <td className="text-sm text-destructive truncate max-w-[250px]">
                     {run.error_message || "—"}
                   </td>
                 </tr>
               ))}
               {(!cronRuns || cronRuns.length === 0) && (
                 <tr>
-                  <td colSpan={5} className="text-center text-muted-foreground py-12">
+                  <td colSpan={5} className="text-center text-muted-foreground py-16">
                     Нет запусков. Настройте бота для начала работы.
                   </td>
                 </tr>

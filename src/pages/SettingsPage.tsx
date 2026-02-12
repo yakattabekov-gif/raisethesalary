@@ -51,17 +51,17 @@ const SettingsPage = () => {
     }
   };
 
-  if (isLoading) return <div className="p-10 text-muted-foreground">Загрузка настроек...</div>;
+  if (isLoading) return <div className="py-16 text-center text-muted-foreground">Загрузка настроек...</div>;
 
   const Field = ({ keyName, label, type = "text" }: { keyName: string; label: string; type?: "text" | "textarea" | "password" }) => (
     <div className="space-y-2">
-      <Label className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold">{label}</Label>
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
       <div className="flex gap-2">
         {type === "textarea" ? (
           <Textarea
             value={formValues[keyName] || ""}
             onChange={(e) => handleChange(keyName, e.target.value)}
-            className="font-mono text-sm bg-input border-border/60 focus:border-primary/40"
+            className="text-sm bg-background border-border rounded-xl focus:ring-2 focus:ring-primary/20"
             rows={3}
           />
         ) : (
@@ -69,10 +69,10 @@ const SettingsPage = () => {
             type={type}
             value={formValues[keyName] || ""}
             onChange={(e) => handleChange(keyName, e.target.value)}
-            className="font-mono text-sm bg-input border-border/60 focus:border-primary/40"
+            className="text-sm bg-background border-border rounded-xl focus:ring-2 focus:ring-primary/20"
           />
         )}
-        <Button size="sm" variant="outline" onClick={() => handleSave(keyName)} className="shrink-0 h-10">
+        <Button size="sm" variant="outline" onClick={() => handleSave(keyName)} className="shrink-0 h-10 rounded-xl">
           <Save className="w-3.5 h-3.5" />
         </Button>
       </div>
@@ -80,16 +80,16 @@ const SettingsPage = () => {
   );
 
   const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-    <section className="space-y-5">
-      <h2 className="text-[13px] font-bold text-foreground uppercase tracking-wider border-b border-border/40 pb-3">{title}</h2>
+    <section className="bg-card rounded-2xl border border-border shadow-sm p-6 space-y-5">
+      <h2 className="text-sm font-semibold text-foreground">{title}</h2>
       {children}
     </section>
   );
 
   return (
-    <div className="p-6 lg:p-10 space-y-10 max-w-3xl">
+    <div className="space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-2xl font-bold text-foreground tracking-tight">Настройки</h1>
+        <h1 className="text-2xl font-extrabold text-foreground tracking-tight">Настройки</h1>
         <p className="text-sm text-muted-foreground mt-1">Конфигурация Jira, Spark и системы</p>
       </div>
 
@@ -105,9 +105,9 @@ const SettingsPage = () => {
       <Section title="Spark">
         <Field keyName="spark_base_url" label="Base API URL" />
         <Field keyName="spark_bearer_token" label="Bearer Token" type="password" />
-        <div className="flex items-center gap-2 mt-1">
-          <span className={`status-dot-${formValues.spark_bearer_token ? "success" : "error"}`} />
-          <span className="text-[11px] font-mono text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <span className={formValues.spark_bearer_token ? "status-dot-success" : "status-dot-error"} />
+          <span className="text-xs text-muted-foreground">
             Token: {formValues.spark_bearer_token ? "Настроен" : "Отсутствует"}
           </span>
         </div>
@@ -120,12 +120,12 @@ const SettingsPage = () => {
 
       <Section title="Крон и ручной запуск">
         <div className="space-y-2">
-          <Label className="text-[11px] text-muted-foreground uppercase tracking-widest font-semibold">Cron Schedule</Label>
+          <Label className="text-xs font-medium text-muted-foreground">Cron Schedule</Label>
           <div className="flex gap-2">
             <Input
               value={cronSchedule}
               onChange={(e) => setCronSchedule(e.target.value)}
-              className="font-mono text-sm bg-input border-border/60"
+              className="text-sm bg-background border-border rounded-xl"
               placeholder="*/2 * * * *"
             />
             <Button
@@ -147,16 +147,16 @@ const SettingsPage = () => {
                   setCronLoading(false);
                 }
               }}
-              className="shrink-0 h-10"
+              className="shrink-0 h-10 rounded-xl"
             >
               <Save className="w-3.5 h-3.5" />
             </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground font-mono">
+          <p className="text-xs text-muted-foreground">
             */2 * * * * (каждые 2 мин) · */5 * * * * (каждые 5 мин) · 0 * * * * (каждый час)
           </p>
         </div>
-        <Button onClick={handleTriggerCron} disabled={triggerLoading} className="gap-2 font-semibold">
+        <Button onClick={handleTriggerCron} disabled={triggerLoading} className="gap-2 font-semibold rounded-full">
           <Play className="w-4 h-4" />
           {triggerLoading ? "Запуск..." : "Запустить крон"}
         </Button>
