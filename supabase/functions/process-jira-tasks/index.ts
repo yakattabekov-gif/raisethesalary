@@ -1666,6 +1666,71 @@ async function executeChangeShipmentType(
       if (dryRun) {
         results.push({ invoice, success: true, dry_run: true, before: beforeState, after: afterState });
         continue;
+      }
+
+      // 4. Build full PUT payload — preserve ALL existing values, only change shipment_type
+      const updatePayload: any = {
+        additional_service: logisticsInfo.additional_service,
+        product_name: logisticsInfo.product_name || "-",
+        dop_invoice_number: logisticsInfo.dop_invoice_number,
+        annotation: logisticsInfo.annotation,
+        cod_payment: logisticsInfo.cod_payment,
+        declared_price: logisticsInfo.declared_price,
+        take_date: logisticsInfo.take_date,
+        period_id: logisticsInfo.period_id,
+        places: logisticsInfo.places,
+        weight: logisticsInfo.weight,
+        width: logisticsInfo.width,
+        height: logisticsInfo.height,
+        depth: logisticsInfo.depth,
+        volume: logisticsInfo.volume,
+        cargo_name: logisticsInfo.cargo_name,
+        should_return_document: logisticsInfo.should_return_document,
+        shipment_type: newShipmentType,
+        payment_type: logisticsInfo.payment_type,
+        payment_method: logisticsInfo.payment_method,
+        cash_sum: logisticsInfo.cash_sum,
+        verify: logisticsInfo.verify,
+        is_dangerous: logisticsInfo.is_dangerous,
+        temperature_regime_type_id: logisticsInfo.temperature_regime_type_id,
+        invoice_files: logisticsInfo.invoice_files,
+        certificate_of_safety_files: logisticsInfo.certificate_of_safety_files,
+        temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files,
+      };
+
+      // 5. PUT to logistics-info/{id}
+      const typeLabel = newShipmentType === 2 ? "Авиа" : "Авто";
+      console.log(`[${VERSION}] PUT /logistics-info/${item.id} shipment_type change: ${logisticsInfo.shipment_type} → ${newShipmentType} (${typeLabel})`);
+      const updateResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!updateResp.ok) {
+        const errBody = await updateResp.text().catch(() => "");
+        throw new Error(`Update shipment_type failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_shipment_type", step: "update_shipment_type_api",
+        request_data: { logistics_info_id: item.id },
+        response_data: { status: updateResp.status, changes: afterState }, success: true,
+      });
+
+      results.push({ invoice, success: true, changes: afterState });
+    } catch (e: any) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_shipment_type", step: "error",
+        success: false, error_message: e.message, request_data: { invoice },
+      });
+      results.push({ invoice, success: false, error: e.message });
+    }
+  }
+  return results;
 }
 
 // ---- Helper: Parse status history from invoice-status response ----
@@ -2144,71 +2209,6 @@ async function executeChangeSenderDirection(
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_sender_direction", step: "error",
-        success: false, error_message: e.message, request_data: { invoice },
-      });
-      results.push({ invoice, success: false, error: e.message });
-    }
-  }
-  return results;
-}
-
-      // 4. Build full PUT payload — preserve ALL existing values, only change shipment_type
-      const updatePayload: any = {
-        additional_service: logisticsInfo.additional_service,
-        product_name: logisticsInfo.product_name || "-",
-        dop_invoice_number: logisticsInfo.dop_invoice_number,
-        annotation: logisticsInfo.annotation,
-        cod_payment: logisticsInfo.cod_payment,
-        declared_price: logisticsInfo.declared_price,
-        take_date: logisticsInfo.take_date,
-        period_id: logisticsInfo.period_id,
-        places: logisticsInfo.places,
-        weight: logisticsInfo.weight,
-        width: logisticsInfo.width,
-        height: logisticsInfo.height,
-        depth: logisticsInfo.depth,
-        volume: logisticsInfo.volume,
-        cargo_name: logisticsInfo.cargo_name,
-        should_return_document: logisticsInfo.should_return_document,
-        shipment_type: newShipmentType,
-        payment_type: logisticsInfo.payment_type,
-        payment_method: logisticsInfo.payment_method,
-        cash_sum: logisticsInfo.cash_sum,
-        verify: logisticsInfo.verify,
-        is_dangerous: logisticsInfo.is_dangerous,
-        temperature_regime_type_id: logisticsInfo.temperature_regime_type_id,
-        invoice_files: logisticsInfo.invoice_files,
-        certificate_of_safety_files: logisticsInfo.certificate_of_safety_files,
-        temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files,
-      };
-
-      // 5. PUT to logistics-info/{id}
-      const typeLabel = newShipmentType === 2 ? "Авиа" : "Авто";
-      console.log(`[${VERSION}] PUT /logistics-info/${item.id} shipment_type change: ${logisticsInfo.shipment_type} → ${newShipmentType} (${typeLabel})`);
-      const updateResp = await fetch(`${sparkUrl}/logistics-info/${item.id}`, {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${sparkToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(updatePayload),
-      });
-
-      if (!updateResp.ok) {
-        const errBody = await updateResp.text().catch(() => "");
-        throw new Error(`Update shipment_type failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
-      }
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_shipment_type", step: "update_shipment_type_api",
-        request_data: { logistics_info_id: item.id },
-        response_data: { status: updateResp.status, changes: afterState }, success: true,
-      });
-
-      results.push({ invoice, success: true, changes: afterState });
-    } catch (e: any) {
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_shipment_type", step: "error",
         success: false, error_message: e.message, request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
