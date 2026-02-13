@@ -12,12 +12,22 @@ export const useAllowedDirections = () =>
   useQuery({
     queryKey: ["allowed_directions"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("allowed_directions")
-        .select("*")
-        .order("parent_city");
-      if (error) throw error;
-      return data as AllowedDirection[];
+      const all: AllowedDirection[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      while (true) {
+        const { data, error } = await supabase
+          .from("allowed_directions")
+          .select("*")
+          .order("parent_city")
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        all.push(...(data as AllowedDirection[]));
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+      return all;
     },
   });
 
