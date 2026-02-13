@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      allowed_directions: {
+        Row: {
+          child_city: string
+          created_at: string
+          id: string
+          parent_city: string
+        }
+        Insert: {
+          child_city: string
+          created_at?: string
+          id?: string
+          parent_city: string
+        }
+        Update: {
+          child_city?: string
+          created_at?: string
+          id?: string
+          parent_city?: string
+        }
+        Relationships: []
+      }
       cron_runs: {
         Row: {
           error_message: string | null

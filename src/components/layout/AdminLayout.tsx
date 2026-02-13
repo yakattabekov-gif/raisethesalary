@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, ListTodo, Brain, Globe, Settings, Zap, Bot, Sparkles, FlaskConical } from "lucide-react";
+import { LayoutDashboard, ListTodo, Brain, Globe, Settings, Zap, Bot, Sparkles, FlaskConical, MapPin } from "lucide-react";
 import { useSettings, useUpdateSetting } from "@/hooks/useSettings";
 import { Switch } from "@/components/ui/switch";
 
@@ -8,6 +8,7 @@ const navItems = [
   { to: "/requests", icon: ListTodo, label: "Заявки" },
   { to: "/logs/ai", icon: Brain, label: "Логи AI" },
   { to: "/logs/curl", icon: Globe, label: "Логи запросов" },
+  { to: "/directions", icon: MapPin, label: "Направления" },
   { to: "/settings", icon: Settings, label: "Настройки" },
 ];
 
