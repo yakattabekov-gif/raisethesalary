@@ -188,7 +188,7 @@ serve(async (req) => {
           console.log(`[${VERSION}] Task ${issueKey} is waiting_for_info — checking Jira comments for invoice number`);
           const commentsText = await fetchJiraComments(settings, jiraAuth, issueKey);
           // Look for invoice numbers in comments (exclude our own bot comments)
-          const invoicePattern = /(?:KXT|SP|kxt|sp)\d{6,12}/gi;
+          const invoicePattern = /(?:KXT|SP|SLQ|kxt|sp|slq)\d{6,12}/gi;
           const commentInvoices = commentsText.match(invoicePattern);
           if (commentInvoices && commentInvoices.length > 0) {
             console.log(`[${VERSION}] Found invoice(s) in comments: ${commentInvoices.join(", ")}`);
@@ -529,6 +529,21 @@ async function parseWithAI(
   ]
 }
 
+Пример ДОБАВИТЬ ДОП.НОМЕР ПОЛУЧАТЕЛЯ:
+Тема: "добавить доп номер"
+Описание: "Добрый день. SLQ0902260207 ул. Ш.Калдаякова, д. 13, кв. Номер получателя +7 700 978 61 47"
+{
+  "actions": [
+    {
+      "action": "update_receiver",
+      "invoices": ["SLQ0902260207"],
+      "address": null,
+      "receiver": {"full_name": null, "phone": null, "additional_phone": "+77009786147"}
+    }
+  ]
+}
+Правило: Если клиент просит ДОБАВИТЬ доп.номер — ставь номер ТОЛЬКО в additional_phone, а phone и full_name = null (не менять).
+
 Пример УКАЗАНИЕ/ПОДТВЕРЖДЕНИЕ АДРЕСА ДОСТАВКИ:
 Текст: "прошу указать адрес доставки. Адрес доставки: г. Павлодар, пл. Победы, 17 — корректный"
 Это СМЕНА АДРЕСА! Клиент указывает новый адрес доставки. Даже если написано "корректный" — это значит что нужно УСТАНОВИТЬ этот адрес.
@@ -686,7 +701,7 @@ async function parseWithAI(
 - cash_sum: ТОЛЬКО если сумма ЯВНО указана. Иначе null.
 
 Важные правила:
-- НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры (KXT110098207, SP00493507...).
+- НОМЕР НАКЛАДНОЙ может быть в теме (summary) или в описании. ОБЯЗАТЕЛЬНО извлеки его. Формат: буквы + цифры (KXT110098207, SP00493507, SLQ0902260207...).
 - Если НЕТ номера накладной НО есть действие (клиент описывает что хочет сделать) — верни {"actions": [], "needs_invoice": true, "detected_action": "<название_действия>"}.
 - Если НЕТ номера накладной И нет действия — верни {"actions": []}.
 - Если просят сменить ТОЛЬКО ФИО/телефон — НЕ включай "address", только "receiver".
