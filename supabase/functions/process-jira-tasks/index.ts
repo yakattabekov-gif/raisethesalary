@@ -321,7 +321,7 @@ serve(async (req) => {
             if (!ok) allSuccess = false;
             if (results.some((r: any) => r.success)) anySuccess = true;
             results.forEach((r: any) => {
-              allCommentLines.push(r.success ? `✅ ${r.invoice}: направление изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`);
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: направление изменено${r.changed ? ` (${r.changed})` : ` на ${r.city || actionItem.city}`}` : `❌ ${r.invoice}: ${r.error}`);
             });
           } else if (actionItem.action === "change_shipment_type") {
             const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
@@ -1367,20 +1367,23 @@ async function executeChangeDirection(
     return [{ invoice: "N/A", success: false, error: "Город назначения не указан" }];
   }
 
-  // If city contains " - " or " – ", take the LAST part (destination city)
+  // Parse city pair: "Алматы - Байсерке" → originCity="Алматы", destinationCity="Байсерке"
+  let originCity: string | null = null;
+  let destinationCity: string = targetCity;
   const separators = [" - ", " – ", " — ", "-"];
   for (const sep of separators) {
     if (targetCity.includes(sep)) {
       const parts = targetCity.split(sep).map((p: string) => p.trim()).filter(Boolean);
       if (parts.length >= 2) {
-        console.log(`[${VERSION}] City pair detected: "${targetCity}" → taking destination: "${parts[parts.length - 1]}"`);
-        targetCity = parts[parts.length - 1];
+        originCity = parts[0];
+        destinationCity = parts[parts.length - 1];
+        console.log(`[${VERSION}] City pair detected: "${targetCity}" → origin="${originCity}", destination="${destinationCity}"`);
       }
       break;
     }
   }
 
-  // Fuzzy city lookup
+  // Fuzzy city lookup helper
   const { data: allCities } = await supabase
     .from("spark_cities")
     .select("id, name");
@@ -1390,9 +1393,7 @@ async function executeChangeDirection(
   }
 
   const normalize = (s: string) => s.toLowerCase().replace(/ё/g, "е").replace(/[\s-]+/g, " ").trim();
-  const normalizedTarget = normalize(targetCity);
 
-  // Levenshtein distance
   function levenshtein(a: string, b: string): number {
     const m = a.length, n = b.length;
     const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
@@ -1404,48 +1405,55 @@ async function executeChangeDirection(
     return dp[m][n];
   }
 
-  // Find best match
-  let bestMatch: any = null;
-  let bestScore = Infinity;
-  for (const city of allCities) {
-    const normalizedName = normalize(city.name);
-    // Exact match
-    if (normalizedName === normalizedTarget) {
-      bestMatch = city;
-      bestScore = 0;
-      break;
+  function findCity(name: string): { id: number; name: string } | null {
+    const normalizedTarget = normalize(name);
+    let bestMatch: any = null;
+    let bestScore = Infinity;
+    for (const city of allCities) {
+      const normalizedName = normalize(city.name);
+      if (normalizedName === normalizedTarget) return city;
+      const dist = levenshtein(normalizedTarget, normalizedName);
+      const maxLen = Math.max(normalizedTarget.length, normalizedName.length);
+      const similarity = 1 - dist / maxLen;
+      if (similarity > 0.6 && dist < bestScore) { bestScore = dist; bestMatch = city; }
     }
-    const dist = levenshtein(normalizedTarget, normalizedName);
-    // Normalize score by max length
-    const maxLen = Math.max(normalizedTarget.length, normalizedName.length);
-    const similarity = 1 - dist / maxLen;
-    if (similarity > 0.6 && dist < bestScore) {
-      bestScore = dist;
-      bestMatch = city;
-    }
+    return bestMatch;
   }
 
-  if (!bestMatch) {
+  // Resolve destination city
+  const destMatch = findCity(destinationCity);
+  if (!destMatch) {
     await supabase.from("execution_logs").insert({
       task_id: taskId, action: "change_direction", step: "city_lookup",
-      success: false, error_message: `Город "${targetCity}" не найден в справочнике (fuzzy)`,
+      success: false, error_message: `Город "${destinationCity}" не найден в справочнике (fuzzy)`,
     });
-    return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${targetCity}" не найден` }));
+    return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${destinationCity}" не найден` }));
   }
 
-  var cityId = bestMatch.id;
-  var cityName = bestMatch.name;
-  console.log(`[${VERSION}] City fuzzy match: "${targetCity}" → id=${cityId}, name="${cityName}" (distance=${bestScore})`);
+  // Resolve origin city if provided
+  let originMatch: { id: number; name: string } | null = null;
+  if (originCity) {
+    originMatch = findCity(originCity);
+    if (!originMatch) {
+      console.warn(`[${VERSION}] Origin city "${originCity}" not found — will only change destination`);
+    } else {
+      console.log(`[${VERSION}] Origin city match: "${originCity}" → id=${originMatch.id}, name="${originMatch.name}"`);
+    }
+  }
+
+  var cityId = destMatch.id;
+  var cityName = destMatch.name;
+  console.log(`[${VERSION}] Destination city match: "${destinationCity}" → id=${cityId}, name="${cityName}"`);
 
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "change_direction", step: "city_lookup",
-    request_data: { requested_city: targetCity },
-    response_data: { city_id: cityId, city_name: cityName }, success: true,
+    request_data: { requested_city: targetCity, origin: originCity, destination: destinationCity },
+    response_data: { dest_city_id: cityId, dest_city_name: cityName, origin_city_id: originMatch?.id, origin_city_name: originMatch?.name }, success: true,
   });
 
   for (const invoice of invoices) {
     try {
-      // 1. Check invoice status via public endpoint (no auth needed)
+      // 1. Check invoice status via public endpoint
       const statusResp = await fetch(
         `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
       );
@@ -1461,12 +1469,8 @@ async function executeChangeDirection(
           else if (Array.isArray(statusData.statuses)) statuses = statusData.statuses;
           else if (Array.isArray(statusData.status_history)) statuses = statusData.status_history;
           else if (Array.isArray(statusData.result)) statuses = statusData.result;
-          else {
-            // Single status object — wrap it
-            statuses = [statusData];
-          }
+          else statuses = [statusData];
         }
-        // Check if "Груз в пути" (status_code 206) has state "completed"
         const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
         if (inTransit && inTransit.state === "completed") {
           console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
@@ -1497,7 +1501,7 @@ async function executeChangeDirection(
       const item = Array.isArray(items) ? items[0] : items;
       if (!item?.id) throw new Error("Invoice not found");
 
-      // 3. GET full logistics-info for receiver data
+      // 3. GET full logistics-info for sender & receiver data
       const fullResp = await fetch(
         `${sparkUrl}/logistics-info/${item.id}`,
         { headers: { Authorization: `Bearer ${sparkToken}`, "Accept": "application/json" } }
@@ -1506,136 +1510,295 @@ async function executeChangeDirection(
       const fullData = await fullResp.json();
       const logisticsInfo = fullData.data || fullData;
       const receiver = logisticsInfo.receiver || logisticsInfo;
+      const sender = logisticsInfo.sender || {};
       if (!receiver?.id) throw new Error("Receiver not found");
 
-      // 4. Geocode current address in the NEW city
-      // Strip city name from address fields (e.g. "Астана, ул. Тайбурыл, 23/1" → "ул. Тайбурыл, 23/1")
-      const stripCityFromAddress = (addr: string): string => {
-        if (!addr) return addr;
-        // Remove city prefix patterns like "г. Астана, " or "Астана, " or "г.Астана,"
-        const cityPattern = /^(?:г\.?\s*)?[А-Яа-яЁёA-Za-z\-]+\s*,\s*/;
-        const match = addr.match(cityPattern);
-        if (match) {
-          // Verify the extracted part looks like a city name (not a street)
-          const extracted = match[0].replace(/^г\.?\s*/, "").replace(/\s*,\s*$/, "").trim();
-          const normalizedExtracted = extracted.toLowerCase().replace(/ё/g, "е");
-          // Check against known cities in allCities or common city patterns
-          const isCity = allCities?.some((c: any) => {
-            const norm = c.name.toLowerCase().replace(/ё/g, "е");
-            return norm === normalizedExtracted || 
-                   normalizedExtracted.includes(norm) || 
-                   norm.includes(normalizedExtracted);
-          });
-          if (isCity) {
-            console.log(`[${VERSION}] Stripped city "${extracted}" from address: "${addr}"`);
-            return addr.slice(match[0].length).trim();
+      const senderCityName = sender.city?.name || "";
+      const receiverCityName = receiver.city?.name || "";
+      const senderCityId = sender.city_id || sender.city?.id || null;
+      const receiverCityId = receiver.city_id || receiver.city?.id || null;
+      console.log(`[${VERSION}] Order ${invoice}: sender_city="${senderCityName}" (id=${senderCityId}), receiver_city="${receiverCityName}" (id=${receiverCityId})`);
+
+      // 4. Determine what needs changing by comparing with the city pair
+      // If we have a city pair (origin - destination), compare sender/receiver cities
+      let changeSender = false;
+      let changeReceiver = false;
+      let senderTargetCityId = senderCityId;
+      let senderTargetCityName = senderCityName;
+      let receiverTargetCityId = cityId; // default: destination city for receiver
+      let receiverTargetCityName = cityName;
+
+      if (originMatch) {
+        // We have both origin and destination from the city pair
+        const normSenderCity = normalize(senderCityName);
+        const normReceiverCity = normalize(receiverCityName);
+        const normOrigin = normalize(originMatch.name);
+        const normDest = normalize(cityName);
+
+        // Check if sender matches origin and receiver matches destination
+        const senderMatchesOrigin = normSenderCity === normOrigin || senderCityId === originMatch.id;
+        const receiverMatchesDest = normReceiverCity === normDest || receiverCityId === cityId;
+        const senderMatchesDest = normSenderCity === normDest || senderCityId === cityId;
+        const receiverMatchesOrigin = normReceiverCity === normOrigin || receiverCityId === originMatch.id;
+
+        console.log(`[${VERSION}] Match analysis: sender↔origin=${senderMatchesOrigin}, receiver↔dest=${receiverMatchesDest}, sender↔dest=${senderMatchesDest}, receiver↔origin=${receiverMatchesOrigin}`);
+
+        if (senderMatchesOrigin && receiverMatchesDest) {
+          // Everything already matches — no change needed
+          console.log(`[${VERSION}] Direction already correct for ${invoice}`);
+          results.push({ invoice, success: true, city: cityName, message: "Направление уже соответствует" });
+          continue;
+        }
+
+        if (!senderMatchesOrigin && !senderMatchesDest) {
+          // Sender doesn't match origin — need to change sender to origin city
+          changeSender = true;
+          senderTargetCityId = originMatch.id;
+          senderTargetCityName = originMatch.name;
+        }
+        if (!receiverMatchesDest && !receiverMatchesOrigin) {
+          // Receiver doesn't match destination — need to change receiver to dest city
+          changeReceiver = true;
+        }
+
+        // If neither direct match works, determine by which side is "wrong"
+        if (!changeSender && !changeReceiver) {
+          // One of them needs changing
+          if (!senderMatchesOrigin) {
+            changeSender = true;
+            senderTargetCityId = originMatch.id;
+            senderTargetCityName = originMatch.name;
+          }
+          if (!receiverMatchesDest) {
+            changeReceiver = true;
           }
         }
-        return addr;
-      };
 
-      let currentStreet = stripCityFromAddress(receiver.street || "");
-      const currentHouse = receiver.house || "";
-      let cleanFullAddress = stripCityFromAddress(receiver.full_address || "");
-      let newLatitude = receiver.latitude != null ? Number(receiver.latitude) : null;
-      let newLongitude = receiver.longitude != null ? Number(receiver.longitude) : null;
-      let newFullAddress = cleanFullAddress;
+        await supabase.from("execution_logs").insert({
+          task_id: taskId, action: "change_direction", step: "direction_analysis",
+          request_data: { sender_city: senderCityName, receiver_city: receiverCityName, origin: originMatch.name, destination: cityName },
+          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName },
+          success: true,
+        });
+      } else {
+        // No origin city — just change receiver (legacy behavior)
+        changeReceiver = true;
+      }
 
-      if (currentStreet) {
-        const yandexApiKey = settings.yandex_geocoder_api_key;
-        if (yandexApiKey) {
-          const geoQuery = `${cityName}, ${currentStreet} ${currentHouse}`.trim();
-          console.log(`[${VERSION}] Geocoding address in new city: "${geoQuery}"`);
-          try {
-            const geoResp = await fetch(
-              `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
-            );
-            const geoData = await geoResp.json();
-            const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
-            const pos = geoMember?.Point?.pos;
-            if (pos) {
-              const [lon, lat] = pos.split(" ").map(Number);
-              newLatitude = lat;
-              newLongitude = lon;
-              const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
-              if (formattedAddr) newFullAddress = formattedAddr;
-              console.log(`[${VERSION}] Geocoded in ${cityName}: lat=${lat}, lon=${lon}, addr="${formattedAddr}"`);
+      // ---- CHANGE RECEIVER if needed ----
+      if (changeReceiver) {
+        const stripCityFromAddress = (addr: string): string => {
+          if (!addr) return addr;
+          const cityPattern = /^(?:г\.?\s*)?[А-Яа-яЁёA-Za-z\-]+\s*,\s*/;
+          const match = addr.match(cityPattern);
+          if (match) {
+            const extracted = match[0].replace(/^г\.?\s*/, "").replace(/\s*,\s*$/, "").trim();
+            const normalizedExtracted = extracted.toLowerCase().replace(/ё/g, "е");
+            const isCity = allCities?.some((c: any) => {
+              const norm = c.name.toLowerCase().replace(/ё/g, "е");
+              return norm === normalizedExtracted || normalizedExtracted.includes(norm) || norm.includes(normalizedExtracted);
+            });
+            if (isCity) {
+              console.log(`[${VERSION}] Stripped city "${extracted}" from address: "${addr}"`);
+              return addr.slice(match[0].length).trim();
+            }
+          }
+          return addr;
+        };
+
+        let currentStreet = stripCityFromAddress(receiver.street || "");
+        const currentHouse = receiver.house || "";
+        let cleanFullAddress = stripCityFromAddress(receiver.full_address || "");
+        let newLatitude = receiver.latitude != null ? Number(receiver.latitude) : null;
+        let newLongitude = receiver.longitude != null ? Number(receiver.longitude) : null;
+        let newFullAddress = cleanFullAddress;
+
+        if (currentStreet) {
+          const yandexApiKey = settings.yandex_geocoder_api_key;
+          if (yandexApiKey) {
+            const geoQuery = `${receiverTargetCityName}, ${currentStreet} ${currentHouse}`.trim();
+            console.log(`[${VERSION}] Geocoding receiver in new city: "${geoQuery}"`);
+            try {
+              const geoResp = await fetch(
+                `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
+              );
+              const geoData = await geoResp.json();
+              const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+              const pos = geoMember?.Point?.pos;
+              if (pos) {
+                const [lon, lat] = pos.split(" ").map(Number);
+                newLatitude = lat;
+                newLongitude = lon;
+                const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
+                if (formattedAddr) newFullAddress = formattedAddr;
+              }
+              await supabase.from("execution_logs").insert({
+                task_id: taskId, action: "change_direction", step: "geocoding_receiver",
+                request_data: { query: geoQuery },
+                response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
+                success: !!geoMember,
+              });
+            } catch (geoErr: any) {
+              console.warn(`[${VERSION}] Geocoding failed: ${geoErr.message}`);
+            }
+          }
+        }
+
+        const receiverPayload: any = {
+          title: receiver.title, entity: receiver.entity || receiver.title,
+          full_name: receiver.full_name, phone: receiver.phone,
+          additional_phone: receiver.additional_phone || null,
+          city_id: Number(receiverTargetCityId),
+          latitude: newLatitude, longitude: newLongitude,
+          street: currentStreet, house: currentHouse, full_address: newFullAddress,
+          flat: receiver.flat || "", comment: receiver.comment || null,
+          office: receiver.office || null, index: receiver.index ? String(receiver.index).substring(0, 10) : null,
+          company_id: receiver.company_id || null, id: receiver.id,
+          sender_id: receiver.sender_id || null, warehouse_id: receiver.warehouse_id || null,
+        };
+
+        await supabase.from("execution_logs").insert({
+          task_id: taskId, action: "change_direction", step: "receiver_before_after",
+          request_data: { before_city: receiverCityName, before_city_id: receiverCityId },
+          response_data: { after_city: receiverTargetCityName, after_city_id: receiverTargetCityId, after_address: newFullAddress }, success: true,
+        });
+
+        if (!dryRun) {
+          console.log(`[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${receiverTargetCityId} (${receiverTargetCityName})`);
+          const updateResp = await fetch(`${sparkUrl}/receivers/${receiver.id}`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
+            body: JSON.stringify(receiverPayload),
+          });
+          if (!updateResp.ok) {
+            const errBody = await updateResp.text().catch(() => "");
+            throw new Error(`Update receiver direction failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
+          }
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_direction", step: "update_receiver_api",
+            request_data: { receiver_id: receiver.id, new_city_id: receiverTargetCityId },
+            response_data: { status: updateResp.status }, success: true,
+          });
+        }
+      }
+
+      // ---- CHANGE SENDER if needed ----
+      if (changeSender) {
+        if (!sender?.id) {
+          console.warn(`[${VERSION}] Cannot change sender — sender not found in logistics-info`);
+        } else {
+          const stripCityFromAddress = (addr: string): string => {
+            if (!addr) return addr;
+            const cityPattern = /^(?:г\.?\s*)?[А-Яа-яЁёA-Za-z\-]+\s*,\s*/;
+            const match = addr.match(cityPattern);
+            if (match) {
+              const extracted = match[0].replace(/^г\.?\s*/, "").replace(/\s*,\s*$/, "").trim();
+              const normalizedExtracted = extracted.toLowerCase().replace(/ё/g, "е");
+              const isCity = allCities?.some((c: any) => {
+                const norm = c.name.toLowerCase().replace(/ё/g, "е");
+                return norm === normalizedExtracted || normalizedExtracted.includes(norm) || norm.includes(normalizedExtracted);
+              });
+              if (isCity) return addr.slice(match[0].length).trim();
+            }
+            return addr;
+          };
+
+          let senderStreet = stripCityFromAddress(sender.street || "");
+          const senderHouse = sender.house || "";
+          let senderFullAddress = stripCityFromAddress(sender.full_address || "");
+          let senderLat = sender.latitude != null ? Number(sender.latitude) : null;
+          let senderLon = sender.longitude != null ? Number(sender.longitude) : null;
+
+          const yandexApiKey = settings.yandex_geocoder_api_key;
+          if (yandexApiKey && (senderStreet || senderHouse)) {
+            const geoQuery = `${senderTargetCityName}, ${senderStreet} ${senderHouse}`.trim();
+            console.log(`[${VERSION}] Geocoding sender in new city: "${geoQuery}"`);
+            try {
+              const geoResp = await fetch(
+                `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(geoQuery)}`
+              );
+              const geoData = await geoResp.json();
+              const geoMember = geoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject;
+              const pos = geoMember?.Point?.pos;
+              if (pos) {
+                const [lon, lat] = pos.split(" ").map(Number);
+                senderLat = lat;
+                senderLon = lon;
+                const formattedAddr = geoMember?.metaDataProperty?.GeocoderMetaData?.text || "";
+                if (formattedAddr) senderFullAddress = formattedAddr;
+              }
+              await supabase.from("execution_logs").insert({
+                task_id: taskId, action: "change_direction", step: "geocoding_sender",
+                request_data: { query: geoQuery },
+                response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
+                success: !!geoMember,
+              });
+            } catch (geoErr: any) {
+              console.warn(`[${VERSION}] Sender geocoding failed: ${geoErr.message}`);
+            }
+          }
+
+          // Fallback to city center coords
+          if (senderLat == null || senderLon == null) {
+            if (yandexApiKey) {
+              try {
+                const cityGeoResp = await fetch(
+                  `https://geocode-maps.yandex.ru/1.x?apikey=${encodeURIComponent(yandexApiKey)}&lang=ru_RU&format=json&geocode=${encodeURIComponent(senderTargetCityName)}`
+                );
+                const cityGeoData = await cityGeoResp.json();
+                const cityPos = cityGeoData?.response?.GeoObjectCollection?.featureMember?.[0]?.GeoObject?.Point?.pos;
+                if (cityPos) {
+                  const [lon, lat] = cityPos.split(" ").map(Number);
+                  senderLat = lat;
+                  senderLon = lon;
+                }
+              } catch (_) {}
+            }
+          }
+
+          const senderPayload: any = {
+            title: sender.title, entity: sender.entity || sender.title,
+            full_name: sender.full_name, phone: sender.phone,
+            additional_phone: sender.additional_phone || null,
+            city_id: Number(senderTargetCityId),
+            latitude: senderLat, longitude: senderLon,
+            street: senderStreet, house: senderHouse, full_address: senderFullAddress,
+            comment: sender.comment || null, office: sender.office || null,
+            index: sender.index ? String(sender.index).substring(0, 10) : null,
+            company_id: sender.company_id || null, id: sender.id,
+            warehouse_id: null, // ALWAYS null for sender
+          };
+
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_direction", step: "sender_before_after",
+            request_data: { before_city: senderCityName, before_city_id: senderCityId },
+            response_data: { after_city: senderTargetCityName, after_city_id: senderTargetCityId }, success: true,
+          });
+
+          if (!dryRun) {
+            console.log(`[${VERSION}] PUT /senders/${sender.id} direction change: city_id=${senderTargetCityId} (${senderTargetCityName})`);
+            const updateResp = await fetch(`${sparkUrl}/senders/${sender.id}`, {
+              method: "PUT",
+              headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify(senderPayload),
+            });
+            if (!updateResp.ok) {
+              const errBody = await updateResp.text().catch(() => "");
+              throw new Error(`Update sender direction failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
             }
             await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "geocoding_new_city",
-              request_data: { query: geoQuery },
-              response_data: geoMember ? { pos, formatted: geoMember?.metaDataProperty?.GeocoderMetaData?.text } : { error: "No results" },
-              success: !!geoMember,
-            });
-          } catch (geoErr: any) {
-            console.warn(`[${VERSION}] Geocoding failed for direction change: ${geoErr.message}`);
-            await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "geocoding_new_city",
-              request_data: { query: `${cityName}, ${currentStreet} ${currentHouse}` },
-              success: false, error_message: geoErr.message,
+              task_id: taskId, action: "change_direction", step: "update_sender_api",
+              request_data: { sender_id: sender.id, new_city_id: senderTargetCityId },
+              response_data: { status: updateResp.status }, success: true,
             });
           }
-        } else {
-          console.warn(`[${VERSION}] Yandex Geocoder API key not configured — skipping address geocoding for direction change`);
         }
       }
 
-      // 5. Build PUT payload with new city_id and geocoded coordinates
-      const updatePayload: any = {
-        title: receiver.title,
-        entity: receiver.entity || receiver.title,
-        full_name: receiver.full_name,
-        phone: receiver.phone,
-        additional_phone: receiver.additional_phone || null,
-        city_id: Number(cityId),
-        latitude: newLatitude,
-        longitude: newLongitude,
-        street: currentStreet,
-        house: currentHouse,
-        full_address: newFullAddress,
-        flat: receiver.flat || "",
-        comment: receiver.comment || null,
-        office: receiver.office || null,
-        index: receiver.index || null,
-        company_id: receiver.company_id || null,
-        id: receiver.id,
-        sender_id: receiver.sender_id || null,
-        warehouse_id: receiver.warehouse_id || null,
-      };
-
-      const beforeCity = receiver.city?.name || receiver.city_id;
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "before_after",
-        request_data: { before_city: beforeCity, before_city_id: receiver.city_id, before_address: receiver.full_address },
-        response_data: { after_city: cityName, after_city_id: cityId, after_address: newFullAddress, lat: newLatitude, lon: newLongitude }, success: true,
-      });
-
-      if (dryRun) {
-        results.push({ invoice, success: true, dry_run: true, city: cityName, before_city: beforeCity, new_address: newFullAddress });
-        continue;
-      }
-
-      // 6. PUT to receivers/{id}
-      console.log(`[${VERSION}] PUT /receivers/${receiver.id} direction change: city_id=${cityId} (${cityName}), address="${newFullAddress}"`);
-      const updateResp = await fetch(`${sparkUrl}/receivers/${receiver.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(updatePayload),
-      });
-
-      if (!updateResp.ok) {
-        const errBody = await updateResp.text().catch(() => "");
-        throw new Error(`Update receiver direction failed: ${updateResp.status} - ${errBody.substring(0, 300)}`);
-      }
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "update_direction_api",
-        request_data: { receiver_id: receiver.id, new_city_id: cityId },
-        response_data: { status: updateResp.status }, success: true,
-      });
-
-      results.push({ invoice, success: true, city: cityName });
+      const changedParts: string[] = [];
+      if (changeReceiver) changedParts.push(`получатель→${receiverTargetCityName}`);
+      if (changeSender) changedParts.push(`отправитель→${senderTargetCityName}`);
+      results.push({ invoice, success: true, city: cityName, dry_run: dryRun || undefined, changed: changedParts.join(", ") || "receiver" });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_direction", step: "error",
