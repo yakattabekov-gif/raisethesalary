@@ -153,15 +153,6 @@ const AllowedDirections = () => {
               placeholder="Алматы"
             />
           </div>
-          <div className="flex-1 space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Направление</label>
-            <CityAutocomplete
-              value={childCity}
-              onChange={setChildCity}
-              placeholder="Байсерке"
-              onKeyDown={(e) => e.key === "Enter" && handleAdd(parentCity, childCity, () => setChildCity(""))}
-            />
-          </div>
           <Button
             onClick={() => handleAdd(parentCity, childCity, () => setChildCity(""))}
             disabled={addDirection.isPending}
