@@ -1,9 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useAllowedDirections, useAddDirection, useDeleteDirection } from "@/hooks/useAllowedDirections";
+import { useSparkCities } from "@/hooks/useSparkCities";
 import { Button } from "@/components/ui/button";
 import CityAutocomplete from "@/components/CityAutocomplete";
 import { toast } from "sonner";
-import { Plus, Trash2, MapPin, X } from "lucide-react";
+import { Plus, Trash2, MapPin, X, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,7 @@ import {
 
 const AllowedDirections = () => {
   const { data: directions, isLoading } = useAllowedDirections();
+  const { data: sparkCities } = useSparkCities();
   const addDirection = useAddDirection();
   const deleteDirection = useDeleteDirection();
 
@@ -21,6 +24,76 @@ const AllowedDirections = () => {
   const [childCity, setChildCity] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [newChild, setNewChild] = useState("");
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedCity) return;
+    setImporting(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+      // Extract city names from first column
+      const cityNames = rows
+        .map((row) => String(row[0] || "").trim())
+        .filter(Boolean);
+
+      if (cityNames.length === 0) {
+        toast.error("Файл пуст или первый столбец не содержит данных");
+        return;
+      }
+
+      // Match against spark_cities (case-insensitive)
+      const sparkMap = new Map(
+        (sparkCities || []).map((c) => [c.name.toLowerCase(), c.name])
+      );
+
+      // Existing children for this parent
+      const existingChildren = new Set(
+        (directions || [])
+          .filter((d) => d.parent_city === selectedCity)
+          .map((d) => d.child_city.toLowerCase())
+      );
+
+      let added = 0;
+      let skipped = 0;
+      let notFound: string[] = [];
+
+      for (const name of cityNames) {
+        const matched = sparkMap.get(name.toLowerCase());
+        if (!matched) {
+          notFound.push(name);
+          continue;
+        }
+        if (existingChildren.has(matched.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        try {
+          await addDirection.mutateAsync({ parent_city: selectedCity, child_city: matched });
+          existingChildren.add(matched.toLowerCase());
+          added++;
+        } catch {
+          skipped++;
+        }
+      }
+
+      const parts: string[] = [];
+      if (added > 0) parts.push(`добавлено: ${added}`);
+      if (skipped > 0) parts.push(`пропущено (дубли): ${skipped}`);
+      if (notFound.length > 0) parts.push(`не найдено: ${notFound.join(", ")}`);
+      toast.success(`Импорт завершён. ${parts.join(", ")}`);
+    } catch (err: any) {
+      toast.error("Ошибка чтения файла: " + (err.message || "неизвестная ошибка"));
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const grouped = useMemo(() => {
     if (!directions) return {};
@@ -163,6 +236,27 @@ const AllowedDirections = () => {
               {selectedDirs.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-4">Нет направлений</p>
               )}
+            </div>
+
+            {/* Import from Excel */}
+            <div className="flex gap-2 pt-2 border-t border-border">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleExcelImport}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl gap-1.5 w-full"
+                disabled={importing}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="w-4 h-4" />
+                {importing ? "Импорт..." : "Импорт из Excel"}
+              </Button>
             </div>
 
             {/* Add child within modal */}
