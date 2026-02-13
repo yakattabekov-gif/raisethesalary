@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useAllowedDirections, useAddDirection, useDeleteDirection } from "@/hooks/useAllowedDirections";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import CityAutocomplete from "@/components/CityAutocomplete";
 import { toast } from "sonner";
 import { Plus, Trash2, MapPin, X } from "lucide-react";
 import {
@@ -74,20 +74,18 @@ const AllowedDirections = () => {
         <div className="flex gap-2 items-end">
           <div className="flex-1 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Основной город</label>
-            <Input
+            <CityAutocomplete
               value={parentCity}
-              onChange={(e) => setParentCity(e.target.value)}
+              onChange={setParentCity}
               placeholder="Алматы"
-              className="text-sm rounded-xl"
             />
           </div>
           <div className="flex-1 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Направление</label>
-            <Input
+            <CityAutocomplete
               value={childCity}
-              onChange={(e) => setChildCity(e.target.value)}
+              onChange={setChildCity}
               placeholder="Байсерке"
-              className="text-sm rounded-xl"
               onKeyDown={(e) => e.key === "Enter" && handleAdd(parentCity, childCity, () => setChildCity(""))}
             />
           </div>
@@ -169,11 +167,10 @@ const AllowedDirections = () => {
 
             {/* Add child within modal */}
             <div className="flex gap-2 pt-2 border-t border-border">
-              <Input
+              <CityAutocomplete
                 value={newChild}
-                onChange={(e) => setNewChild(e.target.value)}
+                onChange={setNewChild}
                 placeholder="Новое направление"
-                className="text-sm rounded-xl"
                 onKeyDown={(e) =>
                   e.key === "Enter" && selectedCity && handleAdd(selectedCity, newChild, () => setNewChild(""))
                 }
