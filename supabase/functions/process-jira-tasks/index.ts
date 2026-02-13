@@ -140,7 +140,13 @@ serve(async (req) => {
         if (typeof node === "string") return node;
         if (node.type === "text") return node.text || "";
         if (node.content && Array.isArray(node.content)) {
-          return node.content.map(extractTextFromADF).join("");
+          // Use appropriate separators for table structures
+          const separator = node.type === "tableRow" ? "\n" 
+            : node.type === "tableCell" || node.type === "tableHeader" ? " " 
+            : node.type === "table" ? "\n"
+            : node.type === "paragraph" ? "\n"
+            : "";
+          return node.content.map(extractTextFromADF).join(separator);
         }
         return "";
       };
