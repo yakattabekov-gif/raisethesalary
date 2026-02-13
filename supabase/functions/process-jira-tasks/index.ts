@@ -1072,15 +1072,10 @@ async function executeUpdateReceiver(
         const requestedCity = newAddress.city || null;
         const effectiveCity = requestedCity || receiverCity;
 
+        // City mismatch is allowed for update_receiver — the user explicitly wants to change the city
         if (requestedCity && receiverCity &&
           requestedCity.toLowerCase() !== receiverCity.toLowerCase()) {
-          const error = `Город не совпадает: запрос="${requestedCity}" vs заказ="${receiverCity}". Обновление отклонено.`;
-          await supabase.from("execution_logs").insert({
-            task_id: taskId, action: "update_receiver", step: "city_check",
-            success: false, error_message: error,
-          });
-          results.push({ invoice, success: false, error });
-          continue;
+          console.log(`[v2.9.0] update_receiver: city change requested "${receiverCity}" -> "${requestedCity}" for ${invoice}`);
         }
 
         // Geocoding via Yandex — use effective city for geocoding
