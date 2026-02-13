@@ -421,6 +421,141 @@ serve(async (req) => {
       }
     }
 
+    // === Retry pending tasks from DB that are not in Jira queue (e.g. manually reset) ===
+    const { data: pendingRetries } = await supabase
+      .from("processed_tasks")
+      .select("*")
+      .eq("status", "pending")
+      .not("ai_response", "is", null)
+      .limit(10);
+
+    if (pendingRetries && pendingRetries.length > 0) {
+      console.log(`[${VERSION}] Found ${pendingRetries.length} pending retry tasks from DB`);
+      for (const task of pendingRetries) {
+        const taskId = task.id;
+        const issueKey = task.jira_issue_key;
+        try {
+          await supabase.from("processed_tasks")
+            .update({ status: "processing", retry_count: task.retry_count + 1 })
+            .eq("id", taskId);
+
+          const aiResult = task.ai_response as any;
+          if (!aiResult?.actions || aiResult.actions.length === 0) {
+            await supabase.from("processed_tasks")
+              .update({ status: "ignored", execution_result: { message: "Нет действий для повтора" } })
+              .eq("id", taskId);
+            processedCount++;
+            continue;
+          }
+
+          const cancelledInvoices = new Set<string>();
+          for (const actionItem of aiResult.actions) {
+            if (actionItem.action === "cancel") {
+              (actionItem.invoices || []).forEach((inv: string) => cancelledInvoices.add(inv));
+            }
+          }
+
+          const allResults: any[] = [];
+          const allCommentLines: string[] = [];
+          let allSuccess = true;
+          let anySuccess = false;
+
+          for (const actionItem of aiResult.actions) {
+            console.log(`[${VERSION}] Retry: executing action ${actionItem.action}, invoices: ${JSON.stringify(actionItem.invoices || [])}`);
+            if (actionItem.action === "cancel") {
+              const results = await executeCancelOrders(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`);
+              });
+            } else if (actionItem.action === "update_receiver") {
+              const filteredInvoices = (actionItem.invoices || []).filter((inv: string) => !cancelledInvoices.has(inv));
+              console.log(`[${VERSION}] Retry update_receiver: filteredInvoices=${JSON.stringify(filteredInvoices)}, receiver=${JSON.stringify(actionItem.receiver)}, address=${JSON.stringify(actionItem.address)}`);
+              if (filteredInvoices.length === 0) continue;
+              const modifiedAction = { ...actionItem, invoices: filteredInvoices };
+              const results = await executeUpdateReceiver(supabase, settings, modifiedAction, taskId, dryRun);
+              console.log(`[${VERSION}] Retry update_receiver results: ${JSON.stringify(results)}`);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: получатель обновлён` : `❌ ${r.invoice}: ${r.error}`);
+              });
+            } else if (actionItem.action === "update_sender") {
+              const modifiedAction = { ...actionItem };
+              const results = await executeUpdateSender(supabase, settings, modifiedAction, taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: отправитель обновлён` : `❌ ${r.invoice}: ${r.error}`);
+              });
+            } else if (actionItem.action === "change_direction") {
+              const modifiedAction = { ...actionItem };
+              const results = await executeChangeDirection(supabase, settings, modifiedAction, taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: направление изменено` : `❌ ${r.invoice}: ${r.error}`);
+              });
+            } else if (actionItem.action === "update_payment") {
+              const modifiedAction = { ...actionItem };
+              const results = await executeUpdatePayment(supabase, settings, modifiedAction, taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`);
+              });
+            } else if (actionItem.action === "change_shipment_type") {
+              const modifiedAction = { ...actionItem };
+              const results = await executeChangeShipmentType(supabase, settings, modifiedAction, taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: тип перевозки изменён` : `❌ ${r.invoice}: ${r.error}`);
+              });
+            } else if (actionItem.action === "change_act_number") {
+              const results = await executeChangeActNumber(supabase, settings, actionItem.ftl_order_ids || [], actionItem.act_number, taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ АВР изменён на ${actionItem.act_number}` : `❌ АВР: ${r.error}`);
+              });
+            }
+          }
+
+          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+          await supabase.from("processed_tasks")
+            .update({ status: finalStatus, execution_result: allResults })
+            .eq("id", taskId);
+
+          // Post Jira comment for retry
+          if (!dryRun && allCommentLines.length > 0) {
+            try {
+              const commentBody = `🔄 Повторная обработка:\n${allCommentLines.join("\n")}`;
+              await addJiraComment(settings, jiraAuth, issueKey, commentBody);
+            } catch (e) {
+              console.error(`[${VERSION}] Failed to add retry comment to ${issueKey}:`, e);
+            }
+          }
+
+          processedCount++;
+          console.log(`[${VERSION}] Retry task ${issueKey}: ${finalStatus}`);
+        } catch (taskError: any) {
+          console.error(`[${VERSION}] Retry task ${issueKey} error:`, taskError);
+          await supabase.from("processed_tasks")
+            .update({ status: "error", execution_result: { error: taskError.message } })
+            .eq("id", taskId);
+        }
+      }
+    }
+
     await supabase
       .from("cron_runs")
       .update({
@@ -1072,10 +1207,28 @@ async function executeUpdateReceiver(
         const requestedCity = newAddress.city || null;
         const effectiveCity = requestedCity || receiverCity;
 
-        // City mismatch is allowed for update_receiver — the user explicitly wants to change the city
+        // City change: look up new city_id from spark_cities
         if (requestedCity && receiverCity &&
           requestedCity.toLowerCase() !== receiverCity.toLowerCase()) {
-          console.log(`[v2.9.0] update_receiver: city change requested "${receiverCity}" -> "${requestedCity}" for ${invoice}`);
+          console.log(`[${VERSION}] update_receiver: city change requested "${receiverCity}" -> "${requestedCity}" for ${invoice}`);
+          
+          // Find the new city_id
+          const { data: cityRows } = await supabase
+            .from("spark_cities")
+            .select("id, name")
+            .ilike("name", requestedCity);
+          
+          if (cityRows && cityRows.length > 0) {
+            const newCityId = cityRows[0].id;
+            beforeState.city_id = updatePayload.city_id;
+            beforeState.city = receiverCity;
+            updatePayload.city_id = Number(newCityId);
+            afterState.city_id = Number(newCityId);
+            afterState.city = cityRows[0].name;
+            console.log(`[${VERSION}] update_receiver: city_id changed ${receiver.city_id} -> ${newCityId} (${cityRows[0].name})`);
+          } else {
+            console.log(`[${VERSION}] update_receiver: WARNING - city "${requestedCity}" not found in spark_cities, keeping original city_id`);
+          }
         }
 
         // Geocoding via Yandex — use effective city for geocoding
