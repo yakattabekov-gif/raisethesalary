@@ -9,6 +9,7 @@ import Requests from "@/pages/Requests";
 import LogsAI from "@/pages/LogsAI";
 import LogsCurl from "@/pages/LogsCurl";
 import SettingsPage from "@/pages/SettingsPage";
+import AllowedDirections from "@/pages/AllowedDirections";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,6 +28,7 @@ const App = () => (
             <Route path="/logs/curl" element={<LogsCurl />} />
             <Route path="/logs" element={<Navigate to="/logs/ai" replace />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/directions" element={<AllowedDirections />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
