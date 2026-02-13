@@ -1,7 +1,11 @@
 import { useProcessedTasks } from "@/hooks/useProcessedTasks";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Eye } from "lucide-react";
+import { Eye, RotateCcw } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { useState } from "react";
 
 const statusPill = (status: string) => {
   if (status === "completed") return <span className="pill-success">Completed</span>;
@@ -12,6 +16,29 @@ const statusPill = (status: string) => {
 
 const Requests = () => {
   const { data: tasks, isLoading } = useProcessedTasks();
+  const queryClient = useQueryClient();
+  const [retrying, setRetrying] = useState<string | null>(null);
+
+  const handleRetry = async (taskId: string, issueKey: string) => {
+    setRetrying(taskId);
+    try {
+      const { error } = await supabase
+        .from("processed_tasks")
+        .update({ status: "pending", retry_count: 0, execution_result: null } as any)
+        .eq("id", taskId);
+      if (error) throw error;
+
+      // Trigger edge function
+      const { data: envData } = await supabase.functions.invoke("process-jira-tasks", { method: "POST" });
+      
+      queryClient.invalidateQueries({ queryKey: ["processed_tasks"] });
+      toast.success(`${issueKey} отправлена на повторную обработку`);
+    } catch (e: any) {
+      toast.error(`Ошибка: ${e.message}`);
+    } finally {
+      setRetrying(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -30,6 +57,7 @@ const Requests = () => {
               <th>Dry Run</th>
               <th>Попытки</th>
               <th>Дата</th>
+              <th className="w-12"></th>
               <th className="w-12"></th>
             </tr>
           </thead>
@@ -84,16 +112,26 @@ const Requests = () => {
                     </DialogContent>
                   </Dialog>
                 </td>
+                <td>
+                  <button
+                    onClick={() => handleRetry(task.id, task.jira_issue_key)}
+                    disabled={retrying === task.id || task.status === "processing" || task.status === "pending"}
+                    className="p-2 rounded-full hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Повторить обработку"
+                  >
+                    <RotateCcw className={`w-4 h-4 ${retrying === task.id ? "animate-spin" : ""}`} />
+                  </button>
+                </td>
               </tr>
             ))}
             {isLoading && (
               <tr>
-                <td colSpan={7} className="text-center text-muted-foreground py-16">Загрузка...</td>
+                <td colSpan={8} className="text-center text-muted-foreground py-16">Загрузка...</td>
               </tr>
             )}
             {!isLoading && (!tasks || tasks.length === 0) && (
               <tr>
-                <td colSpan={7} className="text-center text-muted-foreground py-16">
+                <td colSpan={8} className="text-center text-muted-foreground py-16">
                   Нет обработанных заявок.
                 </td>
               </tr>
