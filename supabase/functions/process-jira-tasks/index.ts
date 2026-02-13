@@ -369,6 +369,15 @@ serve(async (req) => {
             results.forEach((r: any) => {
               allCommentLines.push(r.success ? `✅ ${r.invoice}: направление отправителя изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`);
             });
+          } else if (actionItem.action === "change_act_number") {
+            const results = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`);
+            });
           }
         }
 
@@ -459,6 +468,7 @@ async function parseWithAI(
 6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — клиент просит сменить тип перевозки: "стандарт" / "авто" → shipment_type: 1, "экспресс" / "авиа" → shipment_type: 2
 7. СМЕНА АДРЕСА/ДАННЫХ ОТПРАВИТЕЛЯ (action: "update_sender") — клиент просит изменить адрес, ФИО или телефон ОТПРАВИТЕЛЯ (слова: "изменить адрес отправителя", "сменить адрес забора", "изменить данные отправителя")
 8. СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ (action: "change_sender_direction") — клиент просит сменить город ОТПРАВИТЕЛЯ / город забора (слова: "сменить город отправителя", "сменить город забора")
+9. СМЕНА НОМЕРА АВР ДЛЯ ФТЛ ЗАКАЗОВ (action: "change_act_number") — клиент просит поменять/сменить/изменить номер АВР (акт выполненных работ) для ФТЛ заказов. Слова: "поменять номер АВР", "сменить АВР", "изменить номер АВР", "номер АВР"
 
 ⚠️ КРИТИЧЕСКИ ВАЖНЫЕ ОГРАНИЧЕНИЯ ДЛЯ ОТМЕНЫ:
 - "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. ИГНОРИРУЙ.
@@ -650,6 +660,25 @@ async function parseWithAI(
 - Аналогично change_direction, но для ОТПРАВИТЕЛЯ
 - Слова "город отправителя", "город забора", "сменить город отправки" → change_sender_direction
 - ВАЖНО: Если помимо города указан адрес, телефон или ФИО — включи их в "address" и "sender" в том же действии change_sender_direction. НЕ создавай отдельный update_sender!
+
+Пример СМЕНА НОМЕРА АВР:
+Текст: "поменять номер АВР на этот БК000000313 по ФТЛ заказам ниже: 9590, 9518"
+{
+  "actions": [
+    {
+      "action": "change_act_number",
+      "act_number": "БК000000313",
+      "ftl_order_ids": ["9590", "9518"]
+    }
+  ]
+}
+
+Правила для change_act_number:
+- act_number: номер АВР ТОЧНО как в тексте (например "БК000000313")
+- ftl_order_ids: массив ID ФТЛ заказов. КАЖДЫЙ ID должен быть СТРОГО 4 цифры. Если ID длиннее или короче 4 цифр — ИГНОРИРУЙ его.
+- Извлекай ФТЛ номера из текста: обычно это 4-значные числа (9590, 9518 и т.д.)
+- НЕ путай с номерами накладных (KXT..., SP...) — это ДРУГОЕ
+- У этого действия НЕТ поля "invoices" — используются ftl_order_ids
 
 Правила для payment:
 - payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — ставь 2.
@@ -2297,5 +2326,87 @@ async function executeChangeSenderDirection(
       results.push({ invoice, success: false, error: e.message });
     }
   }
+  return results;
+}
+
+// ---- Change ACT Number for FTL Orders ----
+
+async function executeChangeActNumber(
+  supabase: any, settings: Record<string, string>, actionItem: any, taskId: string, dryRun: boolean
+) {
+  const results: any[] = [];
+  const sparkToken = settings.spark_bearer_token;
+  const actNumber = actionItem.act_number;
+  const ftlOrderIds: string[] = actionItem.ftl_order_ids || [];
+
+  try {
+    // Validate act_number
+    if (!actNumber) throw new Error("Номер АВР не указан");
+
+    // Validate ftl_order_ids: each must be exactly 4 digits
+    const validIds = ftlOrderIds.filter((id: string) => /^\d{4}$/.test(String(id)));
+    if (validIds.length === 0) throw new Error("Нет валидных ФТЛ ID (каждый должен быть ровно 4 цифры)");
+
+    const invalidIds = ftlOrderIds.filter((id: string) => !/^\d{4}$/.test(String(id)));
+    if (invalidIds.length > 0) {
+      console.log(`[${VERSION}] Skipping invalid FTL IDs: ${invalidIds.join(", ")}`);
+    }
+
+    await supabase.from("execution_logs").insert({
+      task_id: taskId, action: "change_act_number", step: "validate",
+      request_data: { act_number: actNumber, ftl_order_ids: ftlOrderIds, valid_ids: validIds },
+      response_data: { valid_count: validIds.length, invalid_ids: invalidIds }, success: true,
+    });
+
+    if (dryRun) {
+      results.push({ success: true, dry_run: true, act_number: actNumber, ftl_order_ids: validIds });
+      return results;
+    }
+
+    const payload = {
+      actNumber: actNumber,
+      ftlOrderIds: validIds,
+    };
+
+    console.log(`[${VERSION}] PUT mass-change-act-number: ${JSON.stringify(payload)}`);
+
+    const resp = await fetch(
+      `https://gateway.spark.kz/cabinet/api/v2/admin/ftl-orders/mass-change-act-number`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${sparkToken}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    const respText = await resp.text();
+    let respData: any;
+    try { respData = JSON.parse(respText); } catch { respData = { raw: respText }; }
+
+    await supabase.from("execution_logs").insert({
+      task_id: taskId, action: "change_act_number", step: "api_call",
+      request_data: payload,
+      response_data: respData, success: resp.ok,
+      error_message: resp.ok ? null : `HTTP ${resp.status}: ${respText.substring(0, 300)}`,
+    });
+
+    if (!resp.ok) {
+      throw new Error(`API error ${resp.status}: ${respText.substring(0, 300)}`);
+    }
+
+    results.push({ success: true, act_number: actNumber, ftl_order_ids: validIds, response: respData });
+  } catch (e: any) {
+    await supabase.from("execution_logs").insert({
+      task_id: taskId, action: "change_act_number", step: "error",
+      success: false, error_message: e.message,
+      request_data: { act_number: actNumber, ftl_order_ids: ftlOrderIds },
+    });
+    results.push({ success: false, error: e.message });
+  }
+
   return results;
 }

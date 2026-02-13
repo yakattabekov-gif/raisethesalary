@@ -13,6 +13,7 @@ const FEATURE_TOGGLES = [
   { key: "feature_change_sender_direction", label: "Смена направления отправителя", desc: "Обработка заявок на изменение направления" },
   { key: "feature_change_shipment_type", label: "Смена типа отправления", desc: "Обработка заявок на изменение типа" },
   { key: "feature_update_receiver", label: "Обновление получателя", desc: "Обработка заявок на обновление данных получателя" },
+  { key: "feature_change_act_number", label: "Смена номера АВР (ФТЛ)", desc: "Обработка заявок на изменение номера АВР для ФТЛ заказов" },
 ];
 
 const SettingsPage = () => {
