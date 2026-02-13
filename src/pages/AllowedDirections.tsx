@@ -1,10 +1,10 @@
 import { useState, useMemo, useRef } from "react";
-import { useAllowedDirections, useAddDirection, useDeleteDirection } from "@/hooks/useAllowedDirections";
+import { useAllowedDirections, useAddDirection, useDeleteDirection, useBulkAddDirections, useDeleteDirectionsByParent } from "@/hooks/useAllowedDirections";
 import { useSparkCities } from "@/hooks/useSparkCities";
 import { Button } from "@/components/ui/button";
 import CityAutocomplete from "@/components/CityAutocomplete";
 import { toast } from "sonner";
-import { Plus, Trash2, MapPin, X, Upload } from "lucide-react";
+import { Plus, Trash2, MapPin, Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   Dialog,
@@ -19,9 +19,10 @@ const AllowedDirections = () => {
   const { data: sparkCities } = useSparkCities();
   const addDirection = useAddDirection();
   const deleteDirection = useDeleteDirection();
+  const bulkAdd = useBulkAddDirections();
+  const deleteByParent = useDeleteDirectionsByParent();
 
   const [parentCity, setParentCity] = useState("");
-  const [childCity, setChildCity] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [newChild, setNewChild] = useState("");
   const [importing, setImporting] = useState(false);
@@ -37,7 +38,6 @@ const AllowedDirections = () => {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
 
-      // Extract city names from first column
       const cityNames = rows
         .map((row) => String(row[0] || "").trim())
         .filter(Boolean);
@@ -47,21 +47,19 @@ const AllowedDirections = () => {
         return;
       }
 
-      // Match against spark_cities (case-insensitive)
       const sparkMap = new Map(
         (sparkCities || []).map((c) => [c.name.toLowerCase(), c.name])
       );
 
-      // Existing children for this parent
       const existingChildren = new Set(
         (directions || [])
           .filter((d) => d.parent_city === selectedCity)
           .map((d) => d.child_city.toLowerCase())
       );
 
-      let added = 0;
+      const toInsert: { parent_city: string; child_city: string }[] = [];
+      const notFound: string[] = [];
       let skipped = 0;
-      let notFound: string[] = [];
 
       for (const name of cityNames) {
         const matched = sparkMap.get(name.toLowerCase());
@@ -73,17 +71,16 @@ const AllowedDirections = () => {
           skipped++;
           continue;
         }
-        try {
-          await addDirection.mutateAsync({ parent_city: selectedCity, child_city: matched });
-          existingChildren.add(matched.toLowerCase());
-          added++;
-        } catch {
-          skipped++;
-        }
+        toInsert.push({ parent_city: selectedCity, child_city: matched });
+        existingChildren.add(matched.toLowerCase());
+      }
+
+      if (toInsert.length > 0) {
+        await bulkAdd.mutateAsync(toInsert);
       }
 
       const parts: string[] = [];
-      if (added > 0) parts.push(`добавлено: ${added}`);
+      if (toInsert.length > 0) parts.push(`добавлено: ${toInsert.length}`);
       if (skipped > 0) parts.push(`пропущено (дубли): ${skipped}`);
       if (notFound.length > 0) parts.push(`не найдено: ${notFound.join(", ")}`);
       toast.success(`Импорт завершён. ${parts.join(", ")}`);
@@ -128,6 +125,17 @@ const AllowedDirections = () => {
     }
   };
 
+  const handleDeleteParent = async (city: string) => {
+    const count = grouped[city]?.length || 0;
+    try {
+      await deleteByParent.mutateAsync(city);
+      setSelectedCity(null);
+      toast.success(`Удалено направление «${city}» и ${count} дочерних`);
+    } catch {
+      toast.error("Ошибка удаления");
+    }
+  };
+
   if (isLoading) return <div className="py-16 text-center text-muted-foreground">Загрузка...</div>;
 
   const selectedDirs = selectedCity ? grouped[selectedCity] || [] : [];
@@ -154,7 +162,7 @@ const AllowedDirections = () => {
             />
           </div>
           <Button
-            onClick={() => handleAdd(parentCity, childCity, () => setChildCity(""))}
+            onClick={() => handleAdd(parentCity, parentCity, () => setParentCity(""))}
             disabled={addDirection.isPending}
             size="sm"
             className="h-10 rounded-xl gap-1.5"
@@ -267,6 +275,20 @@ const AllowedDirections = () => {
                 className="rounded-xl gap-1"
               >
                 <Plus className="w-4 h-4" />
+              </Button>
+            </div>
+
+            {/* Delete parent with all children */}
+            <div className="pt-2 border-t border-border">
+              <Button
+                variant="destructive"
+                size="sm"
+                className="rounded-xl gap-1.5 w-full"
+                disabled={deleteByParent.isPending}
+                onClick={() => selectedCity && handleDeleteParent(selectedCity)}
+              >
+                <Trash2 className="w-4 h-4" />
+                Удалить направление со всеми дочерними
               </Button>
             </div>
           </div>
