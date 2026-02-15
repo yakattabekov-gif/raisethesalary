@@ -1,11 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.10.0";
+const VERSION = "v2.11.0";
 
 const TELEGRAM_CHAT_ID = "6645078966";
 
-async function sendTelegramNotification(issueKey: string, jiraBaseUrl: string, allResults: any[], allCommentLines: string[]) {
+async function sendTelegramNotification(issueKey: string, jiraBaseUrl: string, allResults: any[], allCommentLines: string[], jiraSummary?: string, jiraDescription?: string) {
   const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
   if (!botToken) {
     console.log(`[${VERSION}] TELEGRAM_BOT_TOKEN not set, skipping notification`);
@@ -43,8 +43,18 @@ async function sendTelegramNotification(issueKey: string, jiraBaseUrl: string, a
     let text = `✅ <b>Задача выполнена: ${issueKey}</b>\n`;
     text += `🔗 <a href="${jiraLink}">${issueKey}</a>\n\n`;
     
+    if (jiraSummary) {
+      text += `📋 <b>Запрос:</b> ${jiraSummary}\n`;
+    }
+    if (jiraDescription) {
+      const shortDesc = jiraDescription.length > 300 ? jiraDescription.substring(0, 300) + "..." : jiraDescription;
+      text += `📝 ${shortDesc}\n\n`;
+    } else {
+      text += `\n`;
+    }
+    
     if (changesLines.length > 0) {
-      text += `<b>Изменения:</b>\n${changesLines.join("\n\n")}\n\n`;
+      text += `<b>Изменения (До → После):</b>\n${changesLines.join("\n\n")}\n\n`;
     }
     
     if (successLines.length > 0) {
@@ -476,7 +486,7 @@ serve(async (req) => {
 
         // Telegram notification
         if (!dryRun && anySuccess) {
-          await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines);
+          await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines, summary, description);
         }
 
         // Transition to Done (double-close)
@@ -626,7 +636,7 @@ serve(async (req) => {
 
           // Telegram notification for retry
           if (anySuccess) {
-            await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines);
+            await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines, task.jira_summary || "", task.jira_description || "");
           }
 
           processedCount++;
@@ -1431,7 +1441,7 @@ async function executeUpdateReceiver(
         response_data: { status: updateResp.status }, success: true,
       });
 
-      results.push({ invoice, success: true, changes: afterState });
+      results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_receiver", step: "error",
@@ -1572,7 +1582,7 @@ async function executeUpdatePayment(
         response_data: { status: updateResp.status, changes: afterState }, success: true,
       });
 
-      results.push({ invoice, success: true, changes: afterState });
+      results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_payment", step: "error",
@@ -2030,7 +2040,7 @@ async function executeChangeDirection(
       const changedParts: string[] = [];
       if (changeReceiver) changedParts.push(`получатель→${receiverTargetCityName}`);
       if (changeSender) changedParts.push(`отправитель→${senderTargetCityName}`);
-      results.push({ invoice, success: true, city: cityName, dry_run: dryRun || undefined, changed: changedParts.join(", ") || "receiver" });
+      results.push({ invoice, success: true, city: cityName, dry_run: dryRun || undefined, changed: changedParts.join(", ") || "receiver", before: { direction: `${receiverCityName || ""}${changeSender ? ` / ${senderCityName || ""}` : ""}` }, after: { direction: `${receiverTargetCityName || cityName}${changeSender ? ` / ${senderTargetCityName || ""}` : ""}` } });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_direction", step: "error",
@@ -2191,7 +2201,7 @@ async function executeChangeShipmentType(
         response_data: { status: updateResp.status, changes: afterState }, success: true,
       });
 
-      results.push({ invoice, success: true, changes: afterState });
+      results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_shipment_type", step: "error",
@@ -2474,7 +2484,7 @@ async function executeUpdateSender(
         response_data: { status: updateResp.status }, success: true,
       });
 
-      results.push({ invoice, success: true, changes: afterState });
+      results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_sender", step: "error",
@@ -2733,7 +2743,7 @@ async function executeChangeSenderDirection(
         response_data: { status: updateResp.status }, success: true,
       });
 
-      results.push({ invoice, success: true, city: cityName });
+      results.push({ invoice, success: true, city: cityName, before: { city: beforeCity }, after: { city: cityName } });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_sender_direction", step: "error",
