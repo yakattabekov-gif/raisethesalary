@@ -1178,7 +1178,7 @@ async function executeUpdateReceiver(
         entity: receiver.entity || receiver.title,
         full_name: receiver.full_name,
         phone: normalizePhone(receiver.phone),
-        additional_phone: receiver.additional_phone ? normalizePhone(receiver.additional_phone) : normalizePhone(receiver.phone),
+        additional_phone: normalizePhone(receiver.phone), // always default to main phone to avoid invalid existing data
         city_id: typeof receiver.city_id === 'number' ? receiver.city_id : Number(receiver.city_id),
         latitude: receiver.latitude != null ? Number(receiver.latitude) : null,
         longitude: receiver.longitude != null ? Number(receiver.longitude) : null,
