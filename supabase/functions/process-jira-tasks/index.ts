@@ -1,7 +1,81 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.9.0";
+const VERSION = "v2.10.0";
+
+const TELEGRAM_CHAT_ID = "6645078966";
+
+async function sendTelegramNotification(issueKey: string, jiraBaseUrl: string, allResults: any[], allCommentLines: string[]) {
+  const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+  if (!botToken) {
+    console.log(`[${VERSION}] TELEGRAM_BOT_TOKEN not set, skipping notification`);
+    return;
+  }
+  try {
+    const jiraLink = jiraBaseUrl ? `${jiraBaseUrl.replace(/\/$/, "")}/browse/${issueKey}` : issueKey;
+    
+    // Build changes summary with before/after
+    const changesLines: string[] = [];
+    for (const r of allResults) {
+      if (!r.success) continue;
+      const inv = r.invoice || r.act_number || "";
+      if (r.before && r.after) {
+        const before = r.before;
+        const after = r.after;
+        const fields: string[] = [];
+        for (const key of Object.keys(after)) {
+          const bVal = before[key] !== undefined ? String(before[key]) : "—";
+          const aVal = String(after[key]);
+          if (bVal !== aVal) {
+            fields.push(`  • <b>${key}</b>: <code>${bVal}</code> → <code>${aVal}</code>`);
+          }
+        }
+        if (fields.length > 0) {
+          changesLines.push(`📦 ${inv}\n${fields.join("\n")}`);
+        }
+      } else if (r.changed) {
+        changesLines.push(`📦 ${inv}: ${r.changed}`);
+      }
+    }
+
+    const successLines = allCommentLines.filter(l => l.startsWith("✅"));
+    
+    let text = `✅ <b>Задача выполнена: ${issueKey}</b>\n`;
+    text += `🔗 <a href="${jiraLink}">${issueKey}</a>\n\n`;
+    
+    if (changesLines.length > 0) {
+      text += `<b>Изменения:</b>\n${changesLines.join("\n\n")}\n\n`;
+    }
+    
+    if (successLines.length > 0) {
+      text += `<b>Результат:</b>\n${successLines.join("\n")}`;
+    }
+
+    // Telegram message limit is 4096 chars
+    if (text.length > 4000) {
+      text = text.substring(0, 4000) + "\n...";
+    }
+
+    const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    });
+    const respData = await resp.json();
+    if (!resp.ok) {
+      console.error(`[${VERSION}] Telegram send failed:`, JSON.stringify(respData));
+    } else {
+      console.log(`[${VERSION}] Telegram notification sent for ${issueKey}`);
+    }
+  } catch (e: any) {
+    console.error(`[${VERSION}] Telegram notification error:`, e.message);
+  }
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -400,6 +474,11 @@ serve(async (req) => {
           );
         }
 
+        // Telegram notification
+        if (!dryRun && anySuccess) {
+          await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines);
+        }
+
         // Transition to Done (double-close)
         if (!dryRun && allSuccess) {
           await transitionJiraIssue(settings, jiraAuth, issueKey);
@@ -543,6 +622,11 @@ serve(async (req) => {
             } catch (e) {
               console.error(`[${VERSION}] Failed to add retry comment to ${issueKey}:`, e);
             }
+          }
+
+          // Telegram notification for retry
+          if (anySuccess) {
+            await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines);
           }
 
           processedCount++;
