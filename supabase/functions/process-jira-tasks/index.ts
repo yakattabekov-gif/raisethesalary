@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.13.0";
+const VERSION = "v2.14.0";
 
 const TELEGRAM_CHAT_ID = "6645078966";
 
@@ -468,6 +468,15 @@ serve(async (req) => {
             results.forEach((r: any) => {
               allCommentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`);
             });
+          } else if (actionItem.action === "restore_order") {
+            const results = await executeRestoreOrder(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+            allResults.push(...results);
+            const ok = results.every((r: any) => r.success);
+            if (!ok) allSuccess = false;
+            if (results.some((r: any) => r.success)) anySuccess = true;
+            results.forEach((r: any) => {
+              allCommentLines.push(r.success ? `✅ ${r.invoice}: заказ восстановлен` : `❌ ${r.invoice}: ${r.error}`);
+            });
           }
         }
 
@@ -616,6 +625,14 @@ serve(async (req) => {
               results.forEach((r: any) => {
                 allCommentLines.push(r.success ? `✅ АВР изменён на ${actionItem.act_number}` : `❌ АВР: ${r.error}`);
               });
+            } else if (actionItem.action === "restore_order") {
+              const results = await executeRestoreOrder(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+              allResults.push(...results);
+              if (!results.every((r: any) => r.success)) allSuccess = false;
+              if (results.some((r: any) => r.success)) anySuccess = true;
+              results.forEach((r: any) => {
+                allCommentLines.push(r.success ? `✅ ${r.invoice}: заказ восстановлен` : `❌ ${r.invoice}: ${r.error}`);
+              });
             }
           }
 
@@ -704,6 +721,7 @@ async function parseWithAI(
 7. СМЕНА АДРЕСА/ДАННЫХ ОТПРАВИТЕЛЯ (action: "update_sender") — клиент просит изменить адрес, ФИО или телефон ОТПРАВИТЕЛЯ (слова: "изменить адрес отправителя", "сменить адрес забора", "изменить данные отправителя")
 8. СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ (action: "change_sender_direction") — клиент просит сменить город ОТПРАВИТЕЛЯ / город забора (слова: "сменить город отправителя", "сменить город забора")
 9. СМЕНА НОМЕРА АВР ДЛЯ ФТЛ ЗАКАЗОВ (action: "change_act_number") — клиент просит поменять/сменить/изменить номер АВР (акт выполненных работ) для ФТЛ заказов. Слова: "поменять номер АВР", "сменить АВР", "изменить номер АВР", "номер АВР"
+10. ВОССТАНОВЛЕНИЕ ЗАКАЗА (action: "restore_order") — клиент просит ВОССТАНОВИТЬ отменённый/аннулированный заказ (слова: "восстановить заказ", "восстановить накладную", "восстановить", "вернуть заказ", "реактивировать")
 
 ⚠️ КРИТИЧЕСКИ ВАЖНЫЕ ОГРАНИЧЕНИЯ ДЛЯ ОТМЕНЫ:
 - "Убрать ДК" / "снять ДК" / "убрать доставку курьером" — это НЕ отмена заказа! Это запрос на изменение типа доставки. ИГНОРИРУЙ.
@@ -929,6 +947,22 @@ async function parseWithAI(
 - Извлекай ФТЛ номера из текста: обычно это 4-значные числа (9590, 9518 и т.д.)
 - НЕ путай с номерами накладных (KXT..., SP...) — это ДРУГОЕ
 - У этого действия НЕТ поля "invoices" — используются ftl_order_ids
+
+Пример ВОССТАНОВЛЕНИЕ ЗАКАЗА:
+Текст: "Прошу восстановить заказ KXT110098207" или "Восстановить накладную SP00493934"
+{
+  "actions": [
+    {
+      "action": "restore_order",
+      "invoices": ["KXT110098207"]
+    }
+  ]
+}
+
+Правила для restore_order:
+- Слова "восстановить", "восстановить заказ", "восстановить накладную", "вернуть заказ" → restore_order
+- НЕ путай с отменой! Восстановление — это ОБРАТНОЕ действие отмене.
+- Формат аналогичен cancel — массив invoices.
 
 Правила для payment:
 - payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — ставь 2.
@@ -1205,6 +1239,66 @@ async function executeCancelOrders(
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "cancel", step: "error",
+        success: false, error_message: e.message, request_data: { invoice },
+      });
+      results.push({ invoice, success: false, error: e.message });
+    }
+  }
+  return results;
+}
+
+// ---- Restore Order ----
+
+async function executeRestoreOrder(
+  supabase: any, settings: Record<string, string>, invoices: string[], taskId: string, dryRun: boolean
+) {
+  const results = [];
+  const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
+  const sparkToken = settings.spark_bearer_token;
+
+  for (const invoice of invoices) {
+    try {
+      // 1. Search for invoice to get logistics-info ID
+      const searchResp = await fetch(
+        `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+        { headers: { Authorization: `Bearer ${sparkToken}` } }
+      );
+      if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const items = searchData.data || searchData.items || searchData || [];
+      const item = Array.isArray(items) ? items[0] : items;
+      if (!item?.id) throw new Error("Invoice not found");
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "restore_order", step: "search_invoice",
+        request_data: { invoice },
+        response_data: { id: item.id, status: item.status }, success: true,
+      });
+
+      if (dryRun) {
+        results.push({ invoice, success: true, dry_run: true, spark_id: item.id });
+        continue;
+      }
+
+      // 2. POST restore
+      const restoreResp = await fetch(
+        `${sparkUrl}/logistics-info/${item.id}/restore`,
+        { method: "POST", headers: { Authorization: `Bearer ${sparkToken}` } }
+      );
+      const restoreBody = await restoreResp.text();
+      if (!restoreResp.ok) {
+        throw new Error(`Restore failed: ${restoreResp.status} - ${restoreBody}`);
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "restore_order", step: "restore_invoice",
+        request_data: { id: item.id },
+        response_data: { status: restoreResp.status, body: restoreBody.substring(0, 500) }, success: true,
+      });
+      results.push({ invoice, success: true, spark_id: item.id });
+    } catch (e: any) {
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "restore_order", step: "error",
         success: false, error_message: e.message, request_data: { invoice },
       });
       results.push({ invoice, success: false, error: e.message });
