@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.12.0";
+const VERSION = "v2.13.0";
 
 const TELEGRAM_CHAT_ID = "6645078966";
 
@@ -989,17 +989,44 @@ async function parseWithAI(
     }
   }
 
-  // Post-AI phone validation: extract phone from original text and compare
-  if (aiResult.receiver?.phone) {
-    const fullText = `${summary} ${description}`;
-    // Find phone numbers in original text (8XXXXXXXXXX or +7XXXXXXXXXX or 7XXXXXXXXXX)
-    const phoneMatches = fullText.match(/(?:\+?[78])\d{10}/g);
-    if (phoneMatches && phoneMatches.length > 0) {
-      const originalPhone = normalizePhone(phoneMatches[0]);
-      const aiPhone = normalizePhone(aiResult.receiver.phone);
-      if (aiPhone !== originalPhone) {
-        console.log(`[${VERSION}] Phone mismatch! AI="${aiPhone}", original="${originalPhone}". Using original.`);
-        aiResult.receiver.phone = originalPhone;
+  // Post-AI phone validation: extract phones from original text and compare
+  // Supports formatted numbers like +7 700 786-78-60
+  const fullText = `${summary} ${description}`;
+  const phoneRegex = /(?:\+?\s*[78])[\s\-]*(?:\d[\s\-]*){10}/g;
+  const rawPhoneMatches = fullText.match(phoneRegex);
+  const extractedPhones = rawPhoneMatches
+    ? rawPhoneMatches.map(m => normalizePhone(m.replace(/[\s\-()]/g, "")))
+    : [];
+  if (extractedPhones.length > 0) {
+    console.log(`[${VERSION}] Extracted phones from text: ${JSON.stringify(extractedPhones)}`);
+  }
+
+  // Fix phones in legacy single-action format
+  if (aiResult.receiver?.phone && extractedPhones.length > 0) {
+    const aiPhone = normalizePhone(aiResult.receiver.phone);
+    if (!extractedPhones.includes(aiPhone)) {
+      console.log(`[${VERSION}] Phone mismatch! AI="${aiPhone}", original="${extractedPhones[0]}". Using original.`);
+      aiResult.receiver.phone = extractedPhones[0];
+    }
+  }
+
+  // Fix phones in multi-action format
+  if (aiResult.actions && extractedPhones.length > 0) {
+    for (const action of aiResult.actions) {
+      if (action.receiver?.phone) {
+        const aiPhone = normalizePhone(action.receiver.phone);
+        if (!extractedPhones.includes(aiPhone)) {
+          console.log(`[${VERSION}] Action phone mismatch! AI="${aiPhone}", original="${extractedPhones[0]}". Using original.`);
+          action.receiver.phone = extractedPhones[0];
+        }
+      }
+      if (action.receiver?.additional_phone) {
+        const aiAdditional = normalizePhone(action.receiver.additional_phone);
+        if (!extractedPhones.includes(aiAdditional)) {
+          // Check if additional_phone should be the old phone (not in text) — skip correction
+          // Only correct if it looks like a mangled version of an extracted phone
+          console.log(`[${VERSION}] Action additional_phone "${aiAdditional}" not found in text phones — will be resolved at execution`);
+        }
       }
     }
   }
@@ -1401,9 +1428,17 @@ async function executeUpdateReceiver(
         if (newReceiver.additional_phone) {
           beforeState.additional_phone = receiver.additional_phone || null;
           const normalizedAdditionalPhone = normalizePhone(newReceiver.additional_phone);
-          updatePayload.additional_phone = normalizedAdditionalPhone;
-          afterState.additional_phone = normalizedAdditionalPhone;
-          console.log(`[${VERSION}] Additional phone normalized: "${newReceiver.additional_phone}" → "${normalizedAdditionalPhone}"`);
+          // If additional_phone equals the new phone, use OLD phone as additional instead
+          if (newReceiver.phone && normalizedAdditionalPhone === normalizePhone(newReceiver.phone) && receiver.phone) {
+            const oldPhone = normalizePhone(receiver.phone);
+            updatePayload.additional_phone = oldPhone;
+            afterState.additional_phone = oldPhone;
+            console.log(`[${VERSION}] additional_phone same as new phone — using OLD phone "${oldPhone}" as additional`);
+          } else {
+            updatePayload.additional_phone = normalizedAdditionalPhone;
+            afterState.additional_phone = normalizedAdditionalPhone;
+            console.log(`[${VERSION}] Additional phone normalized: "${newReceiver.additional_phone}" → "${normalizedAdditionalPhone}"`);
+          }
         }
       }
 
