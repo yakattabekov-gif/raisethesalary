@@ -1696,6 +1696,7 @@ async function executeChangeDirection(
   // Check allowed_directions for this city pair (allows direction change even when 206 is completed)
   let isAllowedDirection = false;
   if (originMatch) {
+    // Check both directions: origin→dest and dest→origin
     const { data: allowedDirs } = await supabase
       .from("allowed_directions")
       .select("id")
@@ -1706,18 +1707,29 @@ async function executeChangeDirection(
       isAllowedDirection = true;
       console.log(`[${VERSION}] Direction "${originMatch.name}" → "${cityName}" is in allowed_directions — will skip 206 check`);
     }
+    if (!isAllowedDirection) {
+      const { data: allowedDirsReverse } = await supabase
+        .from("allowed_directions")
+        .select("id")
+        .eq("parent_city", cityName)
+        .eq("child_city", originMatch.name)
+        .limit(1);
+      if (allowedDirsReverse && allowedDirsReverse.length > 0) {
+        isAllowedDirection = true;
+        console.log(`[${VERSION}] Direction "${cityName}" → "${originMatch.name}" is in allowed_directions (reverse) — will skip 206 check`);
+      }
+    }
   }
   if (!isAllowedDirection) {
-    // Also check reverse: maybe destination is parent and origin is child
-    const { data: allowedDirsReverse } = await supabase
+    // No origin specified or pair not found — check if destination city is a child in ANY allowed direction
+    const { data: allowedAny } = await supabase
       .from("allowed_directions")
-      .select("id")
-      .eq("parent_city", cityName)
-      .eq("child_city", originMatch?.name || "")
+      .select("id, parent_city")
+      .eq("child_city", cityName)
       .limit(1);
-    if (allowedDirsReverse && allowedDirsReverse.length > 0) {
+    if (allowedAny && allowedAny.length > 0) {
       isAllowedDirection = true;
-      console.log(`[${VERSION}] Direction "${cityName}" → "${originMatch?.name}" is in allowed_directions (reverse) — will skip 206 check`);
+      console.log(`[${VERSION}] Destination "${cityName}" found as child in allowed_directions (parent="${allowedAny[0].parent_city}") — will skip 206 check`);
     }
   }
 
