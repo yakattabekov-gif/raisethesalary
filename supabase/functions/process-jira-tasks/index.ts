@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
-const VERSION = "v2.11.0";
+const VERSION = "v2.12.0";
 
 const TELEGRAM_CHAT_ID = "6645078966";
 
@@ -1693,6 +1693,34 @@ async function executeChangeDirection(
     response_data: { dest_city_id: cityId, dest_city_name: cityName, origin_city_id: originMatch?.id, origin_city_name: originMatch?.name }, success: true,
   });
 
+  // Check allowed_directions for this city pair (allows direction change even when 206 is completed)
+  let isAllowedDirection = false;
+  if (originMatch) {
+    const { data: allowedDirs } = await supabase
+      .from("allowed_directions")
+      .select("id")
+      .eq("parent_city", originMatch.name)
+      .eq("child_city", cityName)
+      .limit(1);
+    if (allowedDirs && allowedDirs.length > 0) {
+      isAllowedDirection = true;
+      console.log(`[${VERSION}] Direction "${originMatch.name}" → "${cityName}" is in allowed_directions — will skip 206 check`);
+    }
+  }
+  if (!isAllowedDirection) {
+    // Also check reverse: maybe destination is parent and origin is child
+    const { data: allowedDirsReverse } = await supabase
+      .from("allowed_directions")
+      .select("id")
+      .eq("parent_city", cityName)
+      .eq("child_city", originMatch?.name || "")
+      .limit(1);
+    if (allowedDirsReverse && allowedDirsReverse.length > 0) {
+      isAllowedDirection = true;
+      console.log(`[${VERSION}] Direction "${cityName}" → "${originMatch?.name}" is in allowed_directions (reverse) — will skip 206 check`);
+    }
+  }
+
   for (const invoice of invoices) {
     try {
       // 1. Check invoice status via public endpoint
@@ -1715,15 +1743,24 @@ async function executeChangeDirection(
         }
         const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
         if (inTransit && inTransit.state === "completed") {
-          console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
-          await supabase.from("execution_logs").insert({
-            task_id: taskId, action: "change_direction", step: "status_check",
-            request_data: { invoice },
-            response_data: { status: inTransit }, success: false,
-            error_message: "Груз уже в пути — смена направления невозможна",
-          });
-          results.push({ invoice, success: false, error: "Груз уже в пути — смена направления невозможна" });
-          continue;
+          if (isAllowedDirection) {
+            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" completed but direction is ALLOWED — proceeding`);
+            await supabase.from("execution_logs").insert({
+              task_id: taskId, action: "change_direction", step: "status_check",
+              request_data: { invoice, allowed_direction: true },
+              response_data: { status: inTransit, allowed: true }, success: true,
+            });
+          } else {
+            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
+            await supabase.from("execution_logs").insert({
+              task_id: taskId, action: "change_direction", step: "status_check",
+              request_data: { invoice },
+              response_data: { status: inTransit }, success: false,
+              error_message: "Груз уже в пути — смена направления невозможна",
+            });
+            results.push({ invoice, success: false, error: "Груз уже в пути — смена направления невозможна" });
+            continue;
+          }
         }
       }
 
