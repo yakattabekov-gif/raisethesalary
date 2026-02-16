@@ -1023,9 +1023,15 @@ async function parseWithAI(
       if (action.receiver?.additional_phone) {
         const aiAdditional = normalizePhone(action.receiver.additional_phone);
         if (!extractedPhones.includes(aiAdditional)) {
-          // Check if additional_phone should be the old phone (not in text) — skip correction
-          // Only correct if it looks like a mangled version of an extracted phone
-          console.log(`[${VERSION}] Action additional_phone "${aiAdditional}" not found in text phones — will be resolved at execution`);
+          // If additional_phone equals the (corrected) main phone, it will be resolved at execution
+          // Otherwise, it's likely a mangled version of an extracted phone — correct it
+          const correctedPhone = action.receiver.phone ? normalizePhone(action.receiver.phone) : null;
+          if (correctedPhone && aiAdditional !== correctedPhone) {
+            // additional_phone is neither in text nor matches new phone — likely AI hallucination
+            // Set to null so execution logic will use old phone as fallback
+            console.log(`[${VERSION}] Action additional_phone "${aiAdditional}" is invalid — clearing to let execution use old phone`);
+            action.receiver.additional_phone = null;
+          }
         }
       }
     }
@@ -1439,6 +1445,13 @@ async function executeUpdateReceiver(
             afterState.additional_phone = normalizedAdditionalPhone;
             console.log(`[${VERSION}] Additional phone normalized: "${newReceiver.additional_phone}" → "${normalizedAdditionalPhone}"`);
           }
+        } else if (newReceiver.phone && !newReceiver.additional_phone && receiver.phone) {
+          // Phone changed but no additional_phone specified (or cleared by validation) — use old phone as additional
+          beforeState.additional_phone = receiver.additional_phone || null;
+          const oldPhone = normalizePhone(receiver.phone);
+          updatePayload.additional_phone = oldPhone;
+          afterState.additional_phone = oldPhone;
+          console.log(`[${VERSION}] No additional_phone specified — using OLD phone "${oldPhone}" as additional`);
         }
       }
 
