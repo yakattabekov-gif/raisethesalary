@@ -1650,7 +1650,7 @@ async function executeUpdatePayment(
       // 3. Build PUT payload from existing data, override only payment fields
       const updatePayload: any = {
         additional_service: logisticsInfo.additional_service || { hasCar: false, hasSoftPackage: false, hasRisingToTheFloor: false, hasManipulator: false, hasCrane: false, hasHydraulicTrolley: false, hasGrid: false, hasLoader: false, hasPallet: false },
-        product_name: logisticsInfo.product_name || "-",
+        product_name: logisticsInfo.product_name != null ? logisticsInfo.product_name : "-",
         dop_invoice_number: logisticsInfo.dop_invoice_number || null,
         annotation: logisticsInfo.annotation || null,
         cod_payment: Number(logisticsInfo.cod_payment) || 0,
@@ -2345,7 +2345,7 @@ async function executeChangeShipmentType(
       // 4. Build full PUT payload — preserve ALL existing values, only change shipment_type
       const updatePayload: any = {
         additional_service: logisticsInfo.additional_service,
-        product_name: logisticsInfo.product_name || "-",
+        product_name: logisticsInfo.product_name != null ? logisticsInfo.product_name : "-",
         dop_invoice_number: logisticsInfo.dop_invoice_number,
         annotation: logisticsInfo.annotation,
         cod_payment: logisticsInfo.cod_payment,
@@ -2361,8 +2361,8 @@ async function executeChangeShipmentType(
         cargo_name: logisticsInfo.cargo_name,
         should_return_document: logisticsInfo.should_return_document,
         shipment_type: newShipmentType,
-        payment_type: parseInt(String(logisticsInfo.payment_type)) || 1,
-        payment_method: parseInt(String(logisticsInfo.payment_method)) || 4,
+        payment_type: logisticsInfo.payment_type != null ? Number(logisticsInfo.payment_type) : 1,
+        payment_method: logisticsInfo.payment_method != null ? Number(logisticsInfo.payment_method) : 4,
         cash_sum: logisticsInfo.cash_sum != null ? Number(logisticsInfo.cash_sum) : null,
         verify: logisticsInfo.verify,
         is_dangerous: logisticsInfo.is_dangerous,
