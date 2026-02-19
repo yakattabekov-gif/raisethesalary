@@ -1651,6 +1651,8 @@ async function executeUpdatePayment(
       const fullData = await fullResp.json();
       const logisticsInfo = fullData.data || fullData;
 
+      console.log(`[${VERSION}] update_payment ${invoice}: shipment_type raw="${logisticsInfo.shipment_type}" (type=${typeof logisticsInfo.shipment_type}), payment_type=${logisticsInfo.payment_type}`);
+
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_payment", step: "get_logistics_info",
         request_data: { invoice, logistics_info_id: item.id },
@@ -1658,6 +1660,7 @@ async function executeUpdatePayment(
           current_payment_type: logisticsInfo.payment_type,
           current_payment_method: logisticsInfo.payment_method,
           current_cash_sum: logisticsInfo.cash_sum,
+          current_shipment_type: logisticsInfo.shipment_type,
         },
         success: true,
       });
@@ -1680,7 +1683,7 @@ async function executeUpdatePayment(
         volume: Number(logisticsInfo.volume) || 0,
         cargo_name: logisticsInfo.cargo_name || null,
         should_return_document: Number(logisticsInfo.should_return_document) || 0,
-        shipment_type: logisticsInfo.shipment_type != null ? Number(logisticsInfo.shipment_type) : 1,
+        shipment_type: (logisticsInfo.shipment_type != null && Number(logisticsInfo.shipment_type) > 0) ? Number(logisticsInfo.shipment_type) : 1,
         payment_type: Number(paymentData.payment_type ?? logisticsInfo.payment_type ?? 2),
         payment_method: Number(paymentData.payment_method ?? logisticsInfo.payment_method ?? 4),
         verify: logisticsInfo.verify || null,
