@@ -1069,6 +1069,14 @@ async function parseWithAI(
       aiResult.receiver.phone = extractedPhones[0];
     }
   }
+  // Fix sender phones in legacy single-action format
+  if (aiResult.sender?.phone && extractedPhones.length > 0) {
+    const aiSenderPhone = normalizePhone(aiResult.sender.phone);
+    if (!extractedPhones.includes(aiSenderPhone)) {
+      console.log(`[${VERSION}] Sender phone mismatch (legacy)! AI="${aiSenderPhone}", original="${extractedPhones[0]}". Using original.`);
+      aiResult.sender.phone = extractedPhones[0];
+    }
+  }
 
   // Fix phones in multi-action format
   if (aiResult.actions && extractedPhones.length > 0) {
@@ -1083,15 +1091,19 @@ async function parseWithAI(
       if (action.receiver?.additional_phone) {
         const aiAdditional = normalizePhone(action.receiver.additional_phone);
         if (!extractedPhones.includes(aiAdditional)) {
-          // If additional_phone equals the (corrected) main phone, it will be resolved at execution
-          // Otherwise, it's likely a mangled version of an extracted phone — correct it
           const correctedPhone = action.receiver.phone ? normalizePhone(action.receiver.phone) : null;
           if (correctedPhone && aiAdditional !== correctedPhone) {
-            // additional_phone is neither in text nor matches new phone — likely AI hallucination
-            // Set to null so execution logic will use old phone as fallback
             console.log(`[${VERSION}] Action additional_phone "${aiAdditional}" is invalid — clearing to let execution use old phone`);
             action.receiver.additional_phone = null;
           }
+        }
+      }
+      // Fix sender phone cross-validation
+      if (action.sender?.phone) {
+        const aiSenderPhone = normalizePhone(action.sender.phone);
+        if (!extractedPhones.includes(aiSenderPhone)) {
+          console.log(`[${VERSION}] Sender phone mismatch! AI="${aiSenderPhone}", original="${extractedPhones[0]}". Using original.`);
+          action.sender.phone = extractedPhones[0];
         }
       }
     }
