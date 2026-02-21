@@ -1,4 +1,4 @@
-import { VERSION, searchInvoice, getLogisticsInfo } from "./helpers.ts";
+import { VERSION, searchInvoice, getLogisticsInfo, resolveShipmentType } from "./helpers.ts";
 
 export async function executeUpdatePayment(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -45,7 +45,7 @@ export async function executeUpdatePayment(
         volume: Number(logisticsInfo.volume) || 0,
         cargo_name: logisticsInfo.cargo_name || null,
         should_return_document: Number(logisticsInfo.should_return_document) || 0,
-        shipment_type: (logisticsInfo.shipment_type != null && Number(logisticsInfo.shipment_type) > 0) ? Number(logisticsInfo.shipment_type) : 1,
+        shipment_type: resolveShipmentType(logisticsInfo.shipment_type),
         payment_type: Number(paymentData.payment_type ?? logisticsInfo.payment_type ?? 2),
         payment_method: Number(paymentData.payment_method ?? logisticsInfo.payment_method ?? 4),
         verify: logisticsInfo.verify || null,
