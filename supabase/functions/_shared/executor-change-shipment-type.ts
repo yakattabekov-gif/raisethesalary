@@ -1,4 +1,4 @@
-import { VERSION, parseStatusHistory, searchInvoice, getLogisticsInfo } from "./helpers.ts";
+import { VERSION, parseStatusHistory, searchInvoice, getLogisticsInfo, resolveShipmentType } from "./helpers.ts";
 
 export async function executeChangeShipmentType(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -49,7 +49,7 @@ export async function executeChangeShipmentType(
       const item = await searchInvoice(sparkUrl, sparkToken, invoice);
       const logisticsInfo = await getLogisticsInfo(sparkUrl, sparkToken, item.id);
 
-      const currentShipmentType = (logisticsInfo.shipment_type != null && Number(logisticsInfo.shipment_type) > 0) ? Number(logisticsInfo.shipment_type) : 1;
+      const currentShipmentType = resolveShipmentType(logisticsInfo.shipment_type);
       console.log(`[${VERSION}] Current shipment_type for ${invoice}: ${currentShipmentType}, requested: ${newShipmentType}`);
 
       const beforeState = { shipment_type: currentShipmentType };

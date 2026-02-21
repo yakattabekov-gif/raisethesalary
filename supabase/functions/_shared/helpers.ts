@@ -179,6 +179,20 @@ export async function getLogisticsInfo(sparkUrl: string, sparkToken: string, ite
   return fullData.data || fullData;
 }
 
+// Resolve shipment_type: API may return string ("Стандарт", "Экспресс", "Авиа") or number
+export function resolveShipmentType(val: any): number {
+  if (val == null) return 1;
+  const num = Number(val);
+  if (!isNaN(num) && num > 0) return num;
+  const map: Record<string, number> = {
+    "стандарт": 1, "standard": 1,
+    "экспресс": 2, "express": 2,
+    "авиа": 3, "avia": 3, "air": 3,
+  };
+  const key = String(val).toLowerCase().trim();
+  return map[key] ?? 1;
+}
+
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
