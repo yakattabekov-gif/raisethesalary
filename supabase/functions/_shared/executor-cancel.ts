@@ -28,9 +28,10 @@ export async function executeCancelOrders(
       );
       if (!cancelResp.ok) throw new Error(`Cancel failed: ${cancelResp.status}`);
 
+      const cancelEndpoint = `${sparkUrl}/logistics-info/${item.id}/cancel`;
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "cancel", step: "cancel_invoice",
-        request_data: { id: item.id },
+        request_data: { endpoint: `POST ${cancelEndpoint}`, body: null },
         response_data: { status: cancelResp.status }, success: true,
       });
       results.push({ invoice, success: true, spark_id: item.id });

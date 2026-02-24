@@ -285,7 +285,7 @@ export async function executeChangeDirection(
           }
           await supabase.from("execution_logs").insert({
             task_id: taskId, action: "change_direction", step: "update_receiver_api",
-            request_data: { receiver_id: receiver.id, new_city_id: receiverTargetCityId },
+            request_data: { endpoint: `PUT ${sparkUrl}/receivers/${receiver.id}`, body: receiverPayload },
             response_data: { status: updateResp.status }, success: true,
           });
         }
@@ -381,7 +381,7 @@ export async function executeChangeDirection(
             }
             await supabase.from("execution_logs").insert({
               task_id: taskId, action: "change_direction", step: "update_sender_api",
-              request_data: { sender_id: sender.id, new_city_id: senderTargetCityId },
+              request_data: { endpoint: `PUT ${sparkUrl}/senders/${sender.id}`, body: senderPayload },
               response_data: { status: updateResp.status }, success: true,
             });
           }

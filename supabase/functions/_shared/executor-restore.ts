@@ -22,19 +22,28 @@ export async function executeRestoreOrder(
         continue;
       }
 
-      const restoreResp = await fetch(
-        `${sparkUrl}/logistics-info/${item.id}/restore`,
-        { method: "POST", headers: { Authorization: `Bearer ${sparkToken}` } }
-      );
-      const restoreBody = await restoreResp.text();
+      // Calculate tomorrow's date for pickup_date (required by API)
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const pickupDate = `${String(tomorrow.getDate()).padStart(2, '0')}.${String(tomorrow.getMonth() + 1).padStart(2, '0')}.${tomorrow.getFullYear()}`;
+
+      const restoreBody = JSON.stringify({ pickup_date: pickupDate });
+      const restoreEndpoint = `${sparkUrl}/logistics-info/${item.id}/restore`;
+
+      const restoreResp = await fetch(restoreEndpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sparkToken}`, "Content-Type": "application/json" },
+        body: restoreBody,
+      });
+      const restoreRespText = await restoreResp.text();
       if (!restoreResp.ok) {
-        throw new Error(`Restore failed: ${restoreResp.status} - ${restoreBody}`);
+        throw new Error(`Restore failed: ${restoreResp.status} - ${restoreRespText}`);
       }
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "restore_order", step: "restore_invoice",
-        request_data: { id: item.id },
-        response_data: { status: restoreResp.status, body: restoreBody.substring(0, 500) }, success: true,
+        request_data: { endpoint: `POST ${restoreEndpoint}`, body: { pickup_date: pickupDate } },
+        response_data: { status: restoreResp.status, body: restoreRespText.substring(0, 500) }, success: true,
       });
       results.push({ invoice, success: true, spark_id: item.id });
     } catch (e: any) {

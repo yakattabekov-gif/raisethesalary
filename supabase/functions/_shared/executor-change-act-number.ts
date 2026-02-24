@@ -48,7 +48,7 @@ export async function executeChangeActNumber(
 
     await supabase.from("execution_logs").insert({
       task_id: taskId, action: "change_act_number", step: "api_call",
-      request_data: payload,
+      request_data: { endpoint: `PUT https://gateway.spark.kz/cabinet/api/v2/admin/ftl-orders/mass-change-act-number`, body: payload },
       response_data: respData, success: resp.ok,
       error_message: resp.ok ? null : `HTTP ${resp.status}: ${respText.substring(0, 300)}`,
     });

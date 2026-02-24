@@ -133,15 +133,19 @@ export async function executeUpdateSender(
           success: !!geoMember,
         });
 
+        // Use geocoder's formatted address instead of AI-generated one
+        const geocoderFormattedAddress = geoMember?.metaDataProperty?.GeocoderMetaData?.text || null;
+        const finalFullAddress = geocoderFormattedAddress || `${effectiveCity}, ${newAddress.street} ${newAddress.house}`;
+
         beforeState.street = sender.street;
         beforeState.house = sender.house;
         beforeState.full_address = sender.full_address;
         updatePayload.street = newAddress.street;
         updatePayload.house = newAddress.house;
-        updatePayload.full_address = newAddress.full_address;
+        updatePayload.full_address = finalFullAddress;
         afterState.street = newAddress.street;
         afterState.house = newAddress.house;
-        afterState.full_address = newAddress.full_address;
+        afterState.full_address = finalFullAddress;
       }
 
       // 6. Handle name/phone change
@@ -197,7 +201,7 @@ export async function executeUpdateSender(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_sender", step: "update_sender_api",
-        request_data: { order_id: orderId },
+        request_data: { endpoint: `PUT ${sparkUrl}/senders/${sender.id}`, body: updatePayload },
         response_data: { status: updateResp.status }, success: true,
       });
 
