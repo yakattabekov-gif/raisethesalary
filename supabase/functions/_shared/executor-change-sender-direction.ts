@@ -195,7 +195,7 @@ export async function executeChangeSenderDirection(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_sender_direction", step: "update_sender_direction_api",
-        request_data: { order_id: orderId, new_city_id: cityId },
+        request_data: { endpoint: `PUT ${sparkUrl}/senders/${sender.id}`, body: updatePayload },
         response_data: { status: updateResp.status }, success: true,
       });
 

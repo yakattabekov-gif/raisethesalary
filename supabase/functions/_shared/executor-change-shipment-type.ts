@@ -111,7 +111,7 @@ export async function executeChangeShipmentType(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "change_shipment_type", step: "update_shipment_type_api",
-        request_data: { logistics_info_id: item.id },
+        request_data: { endpoint: `PUT ${sparkUrl}/logistics-info/${item.id}`, body: updatePayload },
         response_data: { status: updateResp.status, changes: afterState }, success: true,
       });
 

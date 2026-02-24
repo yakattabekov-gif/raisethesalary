@@ -132,6 +132,10 @@ export async function executeUpdateReceiver(
           success: !!geoMember,
         });
 
+        // Use geocoder's formatted address instead of AI-generated one (AI may put street in city field)
+        const geocoderFormattedAddress = geoMember?.metaDataProperty?.GeocoderMetaData?.text || null;
+        const finalFullAddress = geocoderFormattedAddress || `${effectiveCity}, ${newAddress.street} ${newAddress.house}`;
+
         beforeState.street = receiver.street;
         beforeState.house = receiver.house;
         beforeState.full_address = receiver.full_address;
@@ -139,10 +143,10 @@ export async function executeUpdateReceiver(
         if (longitude !== null) updatePayload.longitude = longitude;
         updatePayload.street = newAddress.street;
         updatePayload.house = newAddress.house;
-        updatePayload.full_address = newAddress.full_address;
+        updatePayload.full_address = finalFullAddress;
         afterState.street = newAddress.street;
         afterState.house = newAddress.house;
-        afterState.full_address = newAddress.full_address;
+        afterState.full_address = finalFullAddress;
       }
 
       // Handle name/phone change
@@ -212,7 +216,7 @@ export async function executeUpdateReceiver(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_receiver", step: "update_receiver_api",
-        request_data: { receiver_id: receiver.id, payload_keys: Object.keys(afterState) },
+        request_data: { endpoint: `PUT ${sparkUrl}/receivers/${receiver.id}`, body: updatePayload },
         response_data: { status: updateResp.status }, success: true,
       });
 

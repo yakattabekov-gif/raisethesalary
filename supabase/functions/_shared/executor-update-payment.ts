@@ -98,8 +98,8 @@ export async function executeUpdatePayment(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_payment", step: "update_payment_api",
-        request_data: { logistics_info_id: item.id },
-        response_data: { status: updateResp.status, changes: afterState }, success: true,
+        request_data: { endpoint: `PUT ${sparkUrl}/logistics-info/${item.id}`, body: updatePayload },
+        response_data: { status: updateResp.status }, success: true,
       });
 
       results.push({ invoice, success: true, before: beforeState, after: afterState });
