@@ -58,7 +58,7 @@ const Requests = () => {
   const getApiLogsForTask = (taskId: string) => {
     if (!executionLogs) return [];
     return executionLogs.filter(
-      (log) => log.task_id === taskId && log.request_data?.endpoint
+      (log) => log.task_id === taskId && (log.request_data?.endpoint || log.error_message || log.step === "error")
     );
   };
 
