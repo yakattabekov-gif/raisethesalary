@@ -33,7 +33,6 @@ export async function executeUpdatePayment(
         product_name: logisticsInfo.product_name || "-",
         dop_invoice_number: logisticsInfo.dop_invoice_number || null,
         annotation: logisticsInfo.annotation || null,
-        cod_payment: Number(logisticsInfo.cod_payment) || 0,
         declared_price: Number(logisticsInfo.declared_price) || 0,
         take_date: logisticsInfo.take_date || new Date().toISOString().split("T")[0],
         period_id: Number(logisticsInfo.period_id) || 3,
@@ -46,8 +45,6 @@ export async function executeUpdatePayment(
         cargo_name: logisticsInfo.cargo_name || null,
         should_return_document: Number(logisticsInfo.should_return_document) || 0,
         shipment_type: resolveShipmentType(logisticsInfo.shipment_type),
-        payment_type: Number(paymentData.payment_type ?? logisticsInfo.payment_type ?? 2),
-        payment_method: Number(paymentData.payment_method ?? logisticsInfo.payment_method ?? 4),
         verify: logisticsInfo.verify || null,
         is_dangerous: Number(logisticsInfo.is_dangerous) || 0,
         temperature_regime_type_id: logisticsInfo.temperature_regime_type_id || null,
@@ -56,6 +53,28 @@ export async function executeUpdatePayment(
         temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files || [],
       };
 
+      // cod_payment: если указан явно (в т.ч. 0) — используем, иначе оставляем текущий
+      if (paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
+        updatePayload.cod_payment = Number(paymentData.cod_payment);
+      } else {
+        updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
+      }
+
+      // payment_type: если null — оставляем текущий (НЕ меняем при НП)
+      if (paymentData.payment_type !== null && paymentData.payment_type !== undefined) {
+        updatePayload.payment_type = Number(paymentData.payment_type);
+      } else {
+        updatePayload.payment_type = Number(logisticsInfo.payment_type ?? 2);
+      }
+
+      // payment_method: если null — оставляем текущий
+      if (paymentData.payment_method !== null && paymentData.payment_method !== undefined) {
+        updatePayload.payment_method = Number(paymentData.payment_method);
+      } else {
+        updatePayload.payment_method = Number(logisticsInfo.payment_method ?? 4);
+      }
+
+      // cash_sum: если null — оставляем текущий
       if (paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
         updatePayload.cash_sum = paymentData.cash_sum;
       } else {
@@ -66,11 +85,13 @@ export async function executeUpdatePayment(
         payment_type: logisticsInfo.payment_type,
         payment_method: logisticsInfo.payment_method,
         cash_sum: logisticsInfo.cash_sum,
+        cod_payment: logisticsInfo.cod_payment,
       };
       const afterState = {
         payment_type: updatePayload.payment_type,
         payment_method: updatePayload.payment_method,
         cash_sum: updatePayload.cash_sum,
+        cod_payment: updatePayload.cod_payment,
       };
 
       await supabase.from("execution_logs").insert({
