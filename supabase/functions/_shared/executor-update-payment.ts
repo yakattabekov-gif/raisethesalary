@@ -1,4 +1,4 @@
-import { VERSION, searchInvoice, getLogisticsInfo, resolveShipmentType } from "./helpers.ts";
+import { VERSION, searchInvoice, getLogisticsInfo, resolveShipmentType, getMutableFields, isFieldMutable } from "./helpers.ts";
 
 export async function executeUpdatePayment(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -8,6 +8,9 @@ export async function executeUpdatePayment(
   const sparkToken = settings.spark_bearer_token;
   const invoices = aiResult.invoices || [];
   const paymentData = aiResult.payment || {};
+
+  const mutable = await getMutableFields(supabase, "update_payment");
+  console.log(`[${VERSION}] update_payment mutable fields: ${[...mutable].join(", ")}`);
 
   for (const invoice of invoices) {
     try {
@@ -23,25 +26,27 @@ export async function executeUpdatePayment(
           current_payment_type: logisticsInfo.payment_type,
           current_payment_method: logisticsInfo.payment_method,
           current_cash_sum: logisticsInfo.cash_sum,
+          current_cod_payment: logisticsInfo.cod_payment,
           current_shipment_type: logisticsInfo.shipment_type,
         },
         success: true,
       });
 
+      // Base payload — always preserve from GET
       const updatePayload: any = {
         additional_service: logisticsInfo.additional_service || { hasCar: false, hasSoftPackage: false, hasRisingToTheFloor: false, hasManipulator: false, hasCrane: false, hasHydraulicTrolley: false, hasGrid: false, hasLoader: false, hasPallet: false },
-        product_name: logisticsInfo.product_name || "-",
+        product_name: isFieldMutable(mutable, "product_name") ? (logisticsInfo.product_name || "-") : (logisticsInfo.product_name || "-"),
         dop_invoice_number: logisticsInfo.dop_invoice_number || null,
-        annotation: logisticsInfo.annotation || null,
-        declared_price: Number(logisticsInfo.declared_price) || 0,
+        annotation: isFieldMutable(mutable, "annotation") ? (logisticsInfo.annotation || null) : (logisticsInfo.annotation || null),
+        declared_price: isFieldMutable(mutable, "declared_price") ? (Number(logisticsInfo.declared_price) || 0) : (Number(logisticsInfo.declared_price) || 0),
         take_date: logisticsInfo.take_date || new Date().toISOString().split("T")[0],
-        period_id: Number(logisticsInfo.period_id) || 3,
-        places: Number(logisticsInfo.places) || 1,
-        weight: Number(logisticsInfo.weight) || 0,
-        width: Number(logisticsInfo.width) || 0,
-        height: Number(logisticsInfo.height) || 0,
-        depth: Number(logisticsInfo.depth) || 0,
-        volume: Number(logisticsInfo.volume) || 0,
+        period_id: isFieldMutable(mutable, "period_id") ? (Number(logisticsInfo.period_id) || 3) : (Number(logisticsInfo.period_id) || 3),
+        places: isFieldMutable(mutable, "places") ? (Number(logisticsInfo.places) || 1) : (Number(logisticsInfo.places) || 1),
+        weight: isFieldMutable(mutable, "weight") ? (Number(logisticsInfo.weight) || 0) : (Number(logisticsInfo.weight) || 0),
+        width: isFieldMutable(mutable, "width") ? (Number(logisticsInfo.width) || 0) : (Number(logisticsInfo.width) || 0),
+        height: isFieldMutable(mutable, "height") ? (Number(logisticsInfo.height) || 0) : (Number(logisticsInfo.height) || 0),
+        depth: isFieldMutable(mutable, "depth") ? (Number(logisticsInfo.depth) || 0) : (Number(logisticsInfo.depth) || 0),
+        volume: isFieldMutable(mutable, "volume") ? (Number(logisticsInfo.volume) || 0) : (Number(logisticsInfo.volume) || 0),
         cargo_name: logisticsInfo.cargo_name || null,
         should_return_document: Number(logisticsInfo.should_return_document) || 0,
         shipment_type: resolveShipmentType(logisticsInfo.shipment_type),
@@ -53,29 +58,29 @@ export async function executeUpdatePayment(
         temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files || [],
       };
 
-      // cod_payment: если указан явно (в т.ч. 0) — используем, иначе оставляем текущий
-      if (paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
+      // cod_payment: only change if mutable AND AI provided a value
+      if (isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
         updatePayload.cod_payment = Number(paymentData.cod_payment);
       } else {
         updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
       }
 
-      // payment_type: если null — оставляем текущий (НЕ меняем при НП)
-      if (paymentData.payment_type !== null && paymentData.payment_type !== undefined) {
+      // payment_type: only change if mutable AND AI provided a value
+      if (isFieldMutable(mutable, "payment_type") && paymentData.payment_type !== null && paymentData.payment_type !== undefined) {
         updatePayload.payment_type = Number(paymentData.payment_type);
       } else {
         updatePayload.payment_type = Number(logisticsInfo.payment_type ?? 2);
       }
 
-      // payment_method: если null — оставляем текущий
-      if (paymentData.payment_method !== null && paymentData.payment_method !== undefined) {
+      // payment_method: only change if mutable AND AI provided a value
+      if (isFieldMutable(mutable, "payment_method") && paymentData.payment_method !== null && paymentData.payment_method !== undefined) {
         updatePayload.payment_method = Number(paymentData.payment_method);
       } else {
         updatePayload.payment_method = Number(logisticsInfo.payment_method ?? 4);
       }
 
-      // cash_sum: если null — оставляем текущий
-      if (paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
+      // cash_sum: only change if mutable AND AI provided a value
+      if (isFieldMutable(mutable, "cash_sum") && paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
         updatePayload.cash_sum = paymentData.cash_sum;
       } else {
         updatePayload.cash_sum = logisticsInfo.cash_sum || 0;
@@ -96,7 +101,7 @@ export async function executeUpdatePayment(
 
       await supabase.from("execution_logs").insert({
         task_id: taskId, action: "update_payment", step: "before_after",
-        request_data: { before: beforeState },
+        request_data: { before: beforeState, mutable_fields: [...mutable] },
         response_data: { after: afterState }, success: true,
       });
 
