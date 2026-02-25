@@ -65,6 +65,33 @@ export type Database = {
         }
         Relationships: []
       }
+      endpoint_field_config: {
+        Row: {
+          action: string
+          created_at: string
+          description: string | null
+          field_name: string
+          id: string
+          is_mutable: boolean
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          description?: string | null
+          field_name: string
+          id?: string
+          is_mutable?: boolean
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          description?: string | null
+          field_name?: string
+          id?: string
+          is_mutable?: boolean
+        }
+        Relationships: []
+      }
       execution_logs: {
         Row: {
           action: string

@@ -197,3 +197,26 @@ export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+// Fetch field config for an action — returns Set of mutable field names
+export async function getMutableFields(supabase: any, action: string): Promise<Set<string>> {
+  const { data } = await supabase
+    .from("endpoint_field_config")
+    .select("field_name, is_mutable")
+    .eq("action", action);
+  if (!data || data.length === 0) {
+    // No config = all fields mutable (backward compat)
+    return new Set(["__all__"]);
+  }
+  const mutable = new Set<string>();
+  for (const row of data) {
+    if (row.is_mutable) mutable.add(row.field_name);
+  }
+  return mutable;
+}
+
+// Check if field is mutable based on config
+export function isFieldMutable(mutableFields: Set<string>, fieldName: string): boolean {
+  if (mutableFields.has("__all__")) return true;
+  return mutableFields.has(fieldName);
+}
