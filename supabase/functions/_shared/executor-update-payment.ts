@@ -39,7 +39,7 @@ export async function executeUpdatePayment(
         dop_invoice_number: logisticsInfo.dop_invoice_number || null,
         annotation: isFieldMutable(mutable, "annotation") ? (logisticsInfo.annotation || null) : (logisticsInfo.annotation || null),
         declared_price: isFieldMutable(mutable, "declared_price") ? (Number(logisticsInfo.declared_price) || 0) : (Number(logisticsInfo.declared_price) || 0),
-        take_date: logisticsInfo.take_date || (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })(),
+        take_date: logisticsInfo.take_date || new Date().toISOString().split("T")[0],
         period_id: isFieldMutable(mutable, "period_id") ? (Number(logisticsInfo.period_id) || 3) : (Number(logisticsInfo.period_id) || 3),
         places: isFieldMutable(mutable, "places") ? (Number(logisticsInfo.places) || 1) : (Number(logisticsInfo.places) || 1),
         weight: isFieldMutable(mutable, "weight") ? (Number(logisticsInfo.weight) || 0) : (Number(logisticsInfo.weight) || 0),
