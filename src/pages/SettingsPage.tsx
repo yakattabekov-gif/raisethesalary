@@ -184,6 +184,16 @@ const SettingsPage = () => {
         <Field keyName="yandex_geocoder_api_key" label="Yandex Geocoder API Key" type="password" />
       </section>
 
+      {/* Telegram */}
+      <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
+        <h2 className="text-sm font-semibold text-foreground">Telegram</h2>
+        <p className="text-xs text-muted-foreground">
+          Укажите дополнительные Chat ID через запятую. Бот будет отправлять уведомления во все указанные чаты помимо основного.
+          Для групповых чатов используйте отрицательный ID (например <code className="text-xs bg-muted px-1.5 py-0.5 rounded">-1001234567890</code>).
+        </p>
+        <Field keyName="telegram_chat_ids" label="Дополнительные Chat ID (через запятую)" />
+      </section>
+
       {/* AI */}
       <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">AI (OpenAI)</h2>

@@ -1,4 +1,26 @@
 import { VERSION, TELEGRAM_CHAT_ID } from "./helpers.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+async function getTelegramChatIds(): Promise<string[]> {
+  const ids = [TELEGRAM_CHAT_ID];
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data } = await supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "telegram_chat_ids")
+      .single();
+    if (data?.value) {
+      const extra = data.value.split(",").map((s: string) => s.trim()).filter((s: string) => s && s !== TELEGRAM_CHAT_ID);
+      ids.push(...extra);
+    }
+  } catch (e: any) {
+    console.warn(`[${VERSION}] Failed to fetch extra chat IDs:`, e.message);
+  }
+  return ids;
+}
 
 export async function sendTelegramNotification(
   issueKey: string, jiraBaseUrl: string, allResults: any[], allCommentLines: string[],
@@ -54,18 +76,27 @@ export async function sendTelegramNotification(
     }
     if (text.length > 4000) text = text.substring(0, 4000) + "\n...";
 
-    const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID, text, parse_mode: "HTML", disable_web_page_preview: true,
-      }),
-    });
-    const respData = await resp.json();
-    if (!resp.ok) {
-      console.error(`[${VERSION}] Telegram send failed:`, JSON.stringify(respData));
-    } else {
-      console.log(`[${VERSION}] Telegram notification sent for ${issueKey}`);
+    const chatIds = await getTelegramChatIds();
+    console.log(`[${VERSION}] Sending Telegram to ${chatIds.length} chat(s): ${chatIds.join(", ")}`);
+
+    for (const chatId of chatIds) {
+      try {
+        const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true,
+          }),
+        });
+        const respData = await resp.json();
+        if (!resp.ok) {
+          console.error(`[${VERSION}] Telegram send failed for ${chatId}:`, JSON.stringify(respData));
+        } else {
+          console.log(`[${VERSION}] Telegram notification sent to ${chatId} for ${issueKey}`);
+        }
+      } catch (e: any) {
+        console.error(`[${VERSION}] Telegram error for chat ${chatId}:`, e.message);
+      }
     }
   } catch (e: any) {
     console.error(`[${VERSION}] Telegram notification error:`, e.message);
