@@ -27,7 +27,7 @@ export async function executeRestoreOrder(
       tomorrow.setDate(tomorrow.getDate() + 1);
       const pickupDate = `${String(tomorrow.getDate()).padStart(2, '0')}.${String(tomorrow.getMonth() + 1).padStart(2, '0')}.${tomorrow.getFullYear()}`;
 
-      const restoreBody = JSON.stringify({ pickup_date: pickupDate });
+      const restoreBody = JSON.stringify({ pickup_date: pickupDate, take_date: pickupDate });
       const restoreEndpoint = `${sparkUrl}/logistics-info/${item.id}/restore`;
 
       const restoreResp = await fetch(restoreEndpoint, {
