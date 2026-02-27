@@ -74,7 +74,7 @@ export async function executeChangeShipmentType(
         annotation: logisticsInfo.annotation || null,
         cod_payment: Number(logisticsInfo.cod_payment) || 0,
         declared_price: Number(logisticsInfo.declared_price) || 0,
-        take_date: logisticsInfo.take_date || new Date().toISOString().split("T")[0],
+        take_date: logisticsInfo.take_date || (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })(),
         period_id: Number(logisticsInfo.period_id) || 3,
         places: Number(logisticsInfo.places) || 1,
         weight: Number(logisticsInfo.weight) || 0,
