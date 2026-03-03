@@ -180,7 +180,33 @@ const SettingsPage = () => {
       <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">Spark API</h2>
         <Field keyName="spark_base_url" label="Base URL" />
-        <Field keyName="spark_bearer_token" label="Bearer Token" type="password" />
+        <Field keyName="spark_bearer_token" label="Bearer Token (авто-обновление)" type="password" />
+        <Field keyName="spark_login_url" label="URL для авторизации" />
+        <Field keyName="spark_login_email" label="Логин (email) для Spark BPMS" />
+        <Field keyName="spark_login_password" label="Пароль для Spark BPMS (base64)" type="password" />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-xl gap-2"
+            onClick={async () => {
+              try {
+                toast.info("Обновление токена...");
+                const { error } = await supabase.functions.invoke("refresh-spark-token");
+                if (error) throw error;
+                toast.success("Токен Spark обновлён");
+              } catch (e: any) {
+                toast.error(e.message || "Ошибка обновления токена");
+              }
+            }}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Обновить токен сейчас
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Последнее: {formValues.spark_token_last_refresh || "—"}
+          </span>
+        </div>
         <Field keyName="yandex_geocoder_api_key" label="Yandex Geocoder API Key" type="password" />
       </section>
 
