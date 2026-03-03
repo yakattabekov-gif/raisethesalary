@@ -7,7 +7,9 @@ export async function parseWithAI(
   const apiKey = settings.openai_api_key;
   if (!apiKey) throw new Error("OpenAI API Key not configured in settings");
 
-  const systemPrompt = `Ты — строгий парсер заявок из Jira Service Desk. 
+  // Use custom prompt from settings if available, otherwise use built-in
+  const customPrompt = settings.ai_system_prompt;
+  const systemPrompt = (customPrompt && customPrompt.trim().length > 50) ? customPrompt : `Ты — строгий парсер заявок из Jira Service Desk. 
 
 ТВОЯ ЗАДАЧА — определить ВСЕ действия, которые клиент просит выполнить в одной заявке. Заявка может содержать НЕСКОЛЬКО действий одновременно.
 
