@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { UserPlus, Shield } from "lucide-react";
+import { UserPlus, Shield, Trash2, Ban, CheckCircle } from "lucide-react";
 
 interface UserWithProfile {
   id: string;
@@ -16,6 +16,7 @@ interface UserWithProfile {
   full_name: string | null;
   nickname: string | null;
   role: string;
+  is_blocked: boolean;
 }
 
 const UserManagement = () => {
@@ -43,6 +44,7 @@ const UserManagement = () => {
         full_name: p.full_name,
         nickname: p.nickname,
         role: roles?.find((r: any) => r.user_id === p.id)?.role || "user",
+        is_blocked: p.is_blocked || false,
       }));
       setUsers(merged);
     }
@@ -75,6 +77,33 @@ const UserManagement = () => {
       toast.error(err.message || "Ошибка создания");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!confirm("Удалить пользователя? Это действие необратимо.")) return;
+    try {
+      const { error } = await supabase.functions.invoke("admin-manage-user", {
+        body: { action: "delete", user_id: userId },
+      });
+      if (error) throw error;
+      toast.success("Пользователь удалён");
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка удаления");
+    }
+  };
+
+  const handleToggleBlock = async (userId: string, currentlyBlocked: boolean) => {
+    try {
+      const { error } = await supabase.functions.invoke("admin-manage-user", {
+        body: { action: currentlyBlocked ? "unblock" : "block", user_id: userId },
+      });
+      if (error) throw error;
+      toast.success(currentlyBlocked ? "Пользователь разблокирован" : "Пользователь заблокирован");
+      fetchUsers();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка");
     }
   };
 
@@ -116,9 +145,7 @@ const UserManagement = () => {
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Роль</Label>
                 <Select value={newRole} onValueChange={setNewRole}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger className="rounded-xl"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="user">Пользователь</SelectItem>
                     <SelectItem value="admin">Администратор</SelectItem>
@@ -147,15 +174,40 @@ const UserManagement = () => {
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="text-sm font-medium text-foreground">{u.full_name || "Без имени"}</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {u.full_name || "Без имени"}
+                    {u.is_blocked && <span className="ml-2 text-xs text-destructive">(заблокирован)</span>}
+                  </p>
                   <p className="text-xs text-muted-foreground">{u.nickname || u.id.substring(0, 8)}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <span className={`pill ${u.role === "admin" ? "pill-warning" : "pill-idle"}`}>
                   <Shield className="w-3 h-3" />
                   {u.role === "admin" ? "Админ" : "Пользователь"}
                 </span>
+                {u.id !== user?.id && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleToggleBlock(u.id, u.is_blocked)}
+                      title={u.is_blocked ? "Разблокировать" : "Заблокировать"}
+                    >
+                      {u.is_blocked ? <CheckCircle className="w-4 h-4 text-success" /> : <Ban className="w-4 h-4 text-warning" />}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleDeleteUser(u.id)}
+                      title="Удалить"
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           ))}

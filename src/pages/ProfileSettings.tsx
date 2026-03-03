@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { toast } from "sonner";
 import { Save, User, Phone, Shield, Key, Camera } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const ProfileSettings = () => {
   const { user } = useAuth();
@@ -22,6 +23,12 @@ const ProfileSettings = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [changingPassword, setChangingPassword] = useState(false);
+
+  // Phone verification state
+  const [showPhoneVerify, setShowPhoneVerify] = useState(false);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [generatedCode, setGeneratedCode] = useState("");
+  const [pendingAction, setPendingAction] = useState<"password" | null>(null);
 
   useEffect(() => {
     if (profile) {
@@ -49,7 +56,33 @@ const ProfileSettings = () => {
     }
   };
 
-  const handleChangePassword = async () => {
+  const requestPhoneVerification = (action: "password") => {
+    if (!phone) {
+      toast.error("Сначала сохраните номер телефона в профиле");
+      return;
+    }
+    // Generate 4-digit code
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    setGeneratedCode(code);
+    setVerifyCode("");
+    setPendingAction(action);
+    setShowPhoneVerify(true);
+    // In production, send SMS. For now, show in toast for testing.
+    toast.info(`Код подтверждения: ${code}`, { duration: 15000 });
+  };
+
+  const handleVerifyAndExecute = async () => {
+    if (verifyCode !== generatedCode) {
+      toast.error("Неверный код подтверждения");
+      return;
+    }
+    setShowPhoneVerify(false);
+    if (pendingAction === "password") {
+      await executePasswordChange();
+    }
+  };
+
+  const executePasswordChange = async () => {
     if (newPassword !== confirmPassword) {
       toast.error("Пароли не совпадают");
       return;
@@ -64,7 +97,6 @@ const ProfileSettings = () => {
       if (error) throw error;
       toast.success("Пароль изменён");
       setNewPassword("");
-      setNewPassword("");
       setConfirmPassword("");
     } catch (err: any) {
       toast.error(err.message);
@@ -73,20 +105,27 @@ const ProfileSettings = () => {
     }
   };
 
+  const handleChangePassword = () => {
+    if (!newPassword || !confirmPassword) {
+      toast.error("Заполните оба поля пароля");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Пароли не совпадают");
+      return;
+    }
+    requestPhoneVerification("password");
+  };
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
     try {
-      // Check if bucket exists, create simple URL-based approach
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64 = reader.result as string;
         setAvatarUrl(base64);
-        await supabase
-          .from("profiles")
-          .update({ avatar_url: base64 })
-          .eq("id", user.id);
+        await supabase.from("profiles").update({ avatar_url: base64 }).eq("id", user.id);
         toast.success("Аватарка обновлена");
       };
       reader.readAsDataURL(file);
@@ -178,6 +217,7 @@ const ProfileSettings = () => {
         <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <Key className="w-4 h-4" /> Смена пароля
         </h2>
+        <p className="text-xs text-muted-foreground">Для смены пароля потребуется подтверждение по номеру телефона (4-значный код)</p>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">Новый пароль</Label>
@@ -193,6 +233,30 @@ const ProfileSettings = () => {
           {changingPassword ? "Изменение..." : "Изменить пароль"}
         </Button>
       </section>
+
+      {/* Phone verification dialog */}
+      <Dialog open={showPhoneVerify} onOpenChange={setShowPhoneVerify}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Подтверждение</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <p className="text-sm text-muted-foreground">
+              Введите 4-значный код, отправленный на номер <strong>{phone}</strong>
+            </p>
+            <Input
+              value={verifyCode}
+              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="0000"
+              className="rounded-xl text-center text-2xl tracking-[0.5em] font-mono"
+              maxLength={4}
+            />
+            <Button onClick={handleVerifyAndExecute} disabled={verifyCode.length !== 4} className="w-full rounded-xl">
+              Подтвердить
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
