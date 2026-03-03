@@ -15,6 +15,8 @@ import EndpointConfig from "@/pages/EndpointConfig";
 import SparkCities from "@/pages/SparkCities";
 import ProfileSettings from "@/pages/ProfileSettings";
 import UserManagement from "@/pages/UserManagement";
+import Notes from "@/pages/Notes";
+import Messenger from "@/pages/Messenger";
 import Login from "@/pages/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
@@ -49,6 +51,8 @@ const ProtectedRoutes = () => {
         <Route path="/cities" element={<SparkCities />} />
         <Route path="/profile" element={<ProfileSettings />} />
         <Route path="/users" element={<UserManagement />} />
+        <Route path="/notes" element={<Notes />} />
+        <Route path="/messenger" element={<Messenger />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
