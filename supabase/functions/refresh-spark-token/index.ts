@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     const settingsMap: Record<string, string> = {};
     settings?.forEach((s: any) => (settingsMap[s.key] = s.value));
 
-    const loginUrl = settingsMap.spark_login_url || "https://bpms.spark.kz/api/login";
+    const loginUrl = settingsMap.spark_login_url || "https://bpms.spark.kz/api/auth/login";
     const email = settingsMap.spark_login_email;
     const password = settingsMap.spark_login_password;
 
