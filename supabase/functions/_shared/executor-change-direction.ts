@@ -173,34 +173,22 @@ export async function executeChangeDirection(
 
         const senderMatchesOrigin = normSenderCity === normOrigin || senderCityId === originMatch.id;
         const receiverMatchesDest = normReceiverCity === normDest || receiverCityId === cityId;
-        const senderMatchesDest = normSenderCity === normDest || senderCityId === cityId;
-        const receiverMatchesOrigin = normReceiverCity === normOrigin || receiverCityId === originMatch.id;
 
-        console.log(`[${VERSION}] Match analysis: sender↔origin=${senderMatchesOrigin}, receiver↔dest=${receiverMatchesDest}, sender↔dest=${senderMatchesDest}, receiver↔origin=${receiverMatchesOrigin}`);
+        console.log(`[${VERSION}] Match analysis: sender="${senderCityName}"↔origin="${originMatch.name}"=${senderMatchesOrigin}, receiver="${receiverCityName}"↔dest="${cityName}"=${receiverMatchesDest}`);
 
         if (senderMatchesOrigin && receiverMatchesDest) {
           results.push({ invoice, success: true, city: cityName, message: "Направление уже соответствует" });
           continue;
         }
 
-        if (!senderMatchesOrigin && !senderMatchesDest) {
+        // Simply: sender must be origin, receiver must be destination
+        if (!senderMatchesOrigin) {
           changeSender = true;
           senderTargetCityId = originMatch.id;
           senderTargetCityName = originMatch.name;
         }
-        if (!receiverMatchesDest && !receiverMatchesOrigin) {
+        if (!receiverMatchesDest) {
           changeReceiver = true;
-        }
-
-        if (!changeSender && !changeReceiver) {
-          if (!senderMatchesOrigin) {
-            changeSender = true;
-            senderTargetCityId = originMatch.id;
-            senderTargetCityName = originMatch.name;
-          }
-          if (!receiverMatchesDest) {
-            changeReceiver = true;
-          }
         }
 
         await supabase.from("execution_logs").insert({
