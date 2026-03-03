@@ -41,15 +41,6 @@ Deno.serve(async (req) => {
       throw new Error("Spark login credentials not configured in settings");
     }
 
-    // Decrypt password if base64-encoded
-    let decryptedPassword = password;
-    try {
-      const decoded = atob(password);
-      if (decoded.length > 0) decryptedPassword = decoded;
-    } catch {
-      // not base64, use as-is
-    }
-
     console.log(`Attempting Spark OAuth login for: ${username}`);
 
     const loginResponse = await fetch(loginUrl, {
@@ -60,7 +51,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         username,
-        password: decryptedPassword,
+        password,
         client_id: Number(clientId),
         client_secret: clientSecret,
         grant_type: "password",
