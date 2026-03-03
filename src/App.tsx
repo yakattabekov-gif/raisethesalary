@@ -11,6 +11,7 @@ import LogsCurl from "@/pages/LogsCurl";
 import SettingsPage from "@/pages/SettingsPage";
 import AllowedDirections from "@/pages/AllowedDirections";
 import EndpointConfig from "@/pages/EndpointConfig";
+import SparkCities from "@/pages/SparkCities";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/directions" element={<AllowedDirections />} />
             <Route path="/endpoints" element={<EndpointConfig />} />
+            <Route path="/cities" element={<SparkCities />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
