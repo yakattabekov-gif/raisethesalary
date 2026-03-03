@@ -181,9 +181,11 @@ const SettingsPage = () => {
         <h2 className="text-sm font-semibold text-foreground">Spark API</h2>
         {renderField("spark_base_url", "Base URL")}
         {renderField("spark_bearer_token", "Bearer Token (авто-обновление)", "password")}
-        {renderField("spark_login_url", "URL для авторизации")}
-        {renderField("spark_login_email", "Логин (email) для Spark BPMS")}
-        {renderField("spark_login_password", "Пароль для Spark BPMS (base64)", "password")}
+        {renderField("spark_login_url", "OAuth URL (по умолч. gateway.spark.kz/oauth/token)")}
+        {renderField("spark_login_email", "Логин (username)")}
+        {renderField("spark_login_password", "Пароль (или base64)", "password")}
+        {renderField("spark_client_id", "Client ID (по умолч. 1)")}
+        {renderField("spark_client_secret", "Client Secret", "password")}
         <div className="flex items-center gap-2">
           <Button
             size="sm"
