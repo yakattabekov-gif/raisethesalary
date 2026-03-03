@@ -40,3 +40,39 @@ export function useToggleFieldMutable() {
     },
   });
 }
+
+export function useAddFieldConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (field: { action: string; field_name: string; description: string }) => {
+      const { error } = await supabase
+        .from("endpoint_field_config" as any)
+        .insert({
+          action: field.action,
+          field_name: field.field_name,
+          description: field.description || null,
+          is_mutable: true,
+        } as any);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["endpoint_field_config"] });
+    },
+  });
+}
+
+export function useDeleteFieldConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("endpoint_field_config" as any)
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["endpoint_field_config"] });
+    },
+  });
+}
