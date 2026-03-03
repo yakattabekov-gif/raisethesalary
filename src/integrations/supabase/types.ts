@@ -497,6 +497,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_conversation_member: {
+        Args: { _conversation_id: string; _user_id: string }
+        Returns: boolean
+      }
       schedule_cron_job: {
         Args: {
           anon_key: string
