@@ -68,7 +68,7 @@ const SettingsPage = () => {
 
   if (isLoading) return <div className="py-16 text-center text-muted-foreground">Загрузка...</div>;
 
-  const Field = ({ keyName, label, type = "text" }: { keyName: string; label: string; type?: "text" | "textarea" | "password" }) => (
+  const renderField = (keyName: string, label: string, type: "text" | "textarea" | "password" = "text") => (
     <div className="space-y-1.5">
       <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
       <div className="flex gap-2">
@@ -169,21 +169,21 @@ const SettingsPage = () => {
       {/* Jira */}
       <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">Jira</h2>
-        <Field keyName="jira_base_url" label="Base URL" />
-        <Field keyName="jira_email" label="Email" />
-        <Field keyName="jira_api_token" label="API Token" type="password" />
-        <Field keyName="jira_project_key" label="Project Key" />
-        <Field keyName="jira_queue_jql" label="JQL-запрос" type="textarea" />
+        {renderField("jira_base_url", "Base URL")}
+        {renderField("jira_email", "Email")}
+        {renderField("jira_api_token", "API Token", "password")}
+        {renderField("jira_project_key", "Project Key")}
+        {renderField("jira_queue_jql", "JQL-запрос", "textarea")}
       </section>
 
       {/* Spark */}
       <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">Spark API</h2>
-        <Field keyName="spark_base_url" label="Base URL" />
-        <Field keyName="spark_bearer_token" label="Bearer Token (авто-обновление)" type="password" />
-        <Field keyName="spark_login_url" label="URL для авторизации" />
-        <Field keyName="spark_login_email" label="Логин (email) для Spark BPMS" />
-        <Field keyName="spark_login_password" label="Пароль для Spark BPMS (base64)" type="password" />
+        {renderField("spark_base_url", "Base URL")}
+        {renderField("spark_bearer_token", "Bearer Token (авто-обновление)", "password")}
+        {renderField("spark_login_url", "URL для авторизации")}
+        {renderField("spark_login_email", "Логин (email) для Spark BPMS")}
+        {renderField("spark_login_password", "Пароль для Spark BPMS (base64)", "password")}
         <div className="flex items-center gap-2">
           <Button
             size="sm"
@@ -207,7 +207,7 @@ const SettingsPage = () => {
             Последнее: {formValues.spark_token_last_refresh || "—"}
           </span>
         </div>
-        <Field keyName="yandex_geocoder_api_key" label="Yandex Geocoder API Key" type="password" />
+        {renderField("yandex_geocoder_api_key", "Yandex Geocoder API Key", "password")}
       </section>
 
       {/* Telegram */}
@@ -217,13 +217,13 @@ const SettingsPage = () => {
           Укажите дополнительные Chat ID через запятую. Бот будет отправлять уведомления во все указанные чаты помимо основного.
           Для групповых чатов используйте отрицательный ID (например <code className="text-xs bg-muted px-1.5 py-0.5 rounded">-1001234567890</code>).
         </p>
-        <Field keyName="telegram_chat_ids" label="Дополнительные Chat ID (через запятую)" />
+        {renderField("telegram_chat_ids", "Дополнительные Chat ID (через запятую)")}
       </section>
 
       {/* AI */}
       <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
         <h2 className="text-sm font-semibold text-foreground">AI (OpenAI)</h2>
-        <Field keyName="openai_api_key" label="API Key" type="password" />
+        {renderField("openai_api_key", "API Key", "password")}
       </section>
     </div>
   );
