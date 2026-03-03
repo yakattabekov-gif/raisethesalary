@@ -17,6 +17,16 @@ const ForgotPassword = () => {
     e.preventDefault();
     setLoading(true);
     try {
+      // Check if user exists first
+      const { data: checkData, error: checkError } = await supabase.functions.invoke("check-user-exists", {
+        body: { email },
+      });
+      if (checkError) throw checkError;
+      if (!checkData.exists) {
+        toast.error("Пользователь с таким email не найден");
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });

@@ -37,26 +37,60 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { action, user_id } = await req.json();
+    const body = await req.json();
+    const { action, user_id } = body;
 
     if (action === "delete") {
-      // Delete from auth (cascades to profiles, roles)
       const { error } = await supabaseAdmin.auth.admin.deleteUser(user_id);
       if (error) throw error;
+
     } else if (action === "block") {
-      // Ban user
       const { error } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
-        ban_duration: "876000h", // ~100 years
+        ban_duration: "876000h",
       });
       if (error) throw error;
-      // Also mark in profiles
       await supabaseAdmin.from("profiles").update({ is_blocked: true }).eq("id", user_id);
+
     } else if (action === "unblock") {
       const { error } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
         ban_duration: "none",
       });
       if (error) throw error;
       await supabaseAdmin.from("profiles").update({ is_blocked: false }).eq("id", user_id);
+
+    } else if (action === "reset_password") {
+      const { password } = body;
+      if (!password || password.length < 6) throw new Error("Password must be at least 6 characters");
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(user_id, { password });
+      if (error) throw error;
+
+    } else if (action === "update_profile") {
+      const { full_name, nickname, phone, avatar_url } = body;
+      const profileUpdate: Record<string, any> = {};
+      if (full_name !== undefined) profileUpdate.full_name = full_name;
+      if (nickname !== undefined) profileUpdate.nickname = nickname;
+      if (phone !== undefined) profileUpdate.phone = phone;
+      if (avatar_url !== undefined) profileUpdate.avatar_url = avatar_url;
+      
+      if (Object.keys(profileUpdate).length > 0) {
+        const { error } = await supabaseAdmin.from("profiles").update(profileUpdate).eq("id", user_id);
+        if (error) throw error;
+      }
+
+    } else if (action === "update_email") {
+      const { email } = body;
+      if (!email) throw new Error("Email is required");
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(user_id, { email });
+      if (error) throw error;
+
+    } else if (action === "update_role") {
+      const { role } = body;
+      if (!role) throw new Error("Role is required");
+      // Delete existing roles and insert new one
+      await supabaseAdmin.from("user_roles").delete().eq("user_id", user_id);
+      const { error } = await supabaseAdmin.from("user_roles").insert({ user_id, role });
+      if (error) throw error;
+
     } else {
       throw new Error("Unknown action");
     }
