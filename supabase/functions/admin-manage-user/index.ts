@@ -14,21 +14,22 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Verify caller is admin using anon client with user's token
+    // Verify caller is admin using getClaims
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No auth header");
+    if (!authHeader?.startsWith("Bearer ")) throw new Error("No auth header");
     
     const token = authHeader.replace("Bearer ", "");
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
+      global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user: caller }, error: authError } = await anonClient.auth.getUser();
-    if (authError || !caller) throw new Error("Invalid token");
+    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) throw new Error("Invalid token");
+    const callerId = claimsData.claims.sub as string;
 
     const { data: roles } = await supabaseAdmin
       .from("user_roles")
       .select("role")
-      .eq("user_id", caller.id)
+      .eq("user_id", callerId)
       .eq("role", "admin");
 
     if (!roles || roles.length === 0) {
