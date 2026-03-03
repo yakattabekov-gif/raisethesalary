@@ -16,17 +16,18 @@ Deno.serve(async (req) => {
 
     // Verify caller is admin
     const authHeader = req.headers.get("Authorization");
-    if (authHeader) {
+    if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
       const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-        global: { headers: { Authorization: `Bearer ${token}` } },
+        global: { headers: { Authorization: authHeader } },
       });
-      const { data: { user: caller } } = await anonClient.auth.getUser();
-      if (caller) {
+      const { data: claimsData } = await anonClient.auth.getClaims(token);
+      if (claimsData?.claims) {
+        const callerId = claimsData.claims.sub as string;
         const { data: roles } = await supabaseAdmin
           .from("user_roles")
           .select("role")
-          .eq("user_id", caller.id)
+          .eq("user_id", callerId)
           .eq("role", "admin");
         
         // Allow if admin OR if no users exist yet (bootstrap)
