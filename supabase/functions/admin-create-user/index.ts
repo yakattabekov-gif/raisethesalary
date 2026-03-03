@@ -18,12 +18,10 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
-      const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: claimsData } = await anonClient.auth.getClaims(token);
-      if (claimsData?.claims) {
-        const callerId = claimsData.claims.sub as string;
+      const payloadBase64 = token.split(".")[1];
+      const payload = payloadBase64 ? JSON.parse(atob(payloadBase64)) : null;
+      if (payload?.sub) {
+        const callerId = payload.sub as string;
         const { data: roles } = await supabaseAdmin
           .from("user_roles")
           .select("role")

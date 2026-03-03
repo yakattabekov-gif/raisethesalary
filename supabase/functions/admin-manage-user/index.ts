@@ -14,17 +14,17 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Verify caller is admin using getClaims
+    // Verify caller is admin by decoding JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) throw new Error("No auth header");
     
     const token = authHeader.replace("Bearer ", "");
-    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) throw new Error("Invalid token");
-    const callerId = claimsData.claims.sub as string;
+    // Decode JWT payload to get user id
+    const payloadBase64 = token.split(".")[1];
+    if (!payloadBase64) throw new Error("Invalid token format");
+    const payload = JSON.parse(atob(payloadBase64));
+    const callerId = payload.sub as string;
+    if (!callerId) throw new Error("Invalid token");
 
     const { data: roles } = await supabaseAdmin
       .from("user_roles")
