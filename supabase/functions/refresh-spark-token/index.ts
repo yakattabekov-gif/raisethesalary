@@ -71,8 +71,8 @@ Deno.serve(async (req) => {
       throw new Error("No access_token found in Spark login response");
     }
 
-    // Store token (base64 encoded for obfuscation)
-    const encodedToken = btoa(token);
+    // Store token as-is (no encoding)
+    const encodedToken = token;
 
     await supabaseAdmin
       .from("settings")
