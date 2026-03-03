@@ -44,15 +44,31 @@ export function useToggleFieldMutable() {
 export function useAddFieldConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (field: { action: string; field_name: string; description: string }) => {
+    mutationFn: async (field: { action: string; field_name: string; description?: string; is_mutable?: boolean }) => {
       const { error } = await supabase
         .from("endpoint_field_config" as any)
         .insert({
           action: field.action,
           field_name: field.field_name,
           description: field.description || null,
-          is_mutable: true,
+          is_mutable: field.is_mutable ?? true,
         } as any);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["endpoint_field_config"] });
+    },
+  });
+}
+
+export function useUpdateFieldDescription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, description }: { id: string; description: string }) => {
+      const { error } = await supabase
+        .from("endpoint_field_config" as any)
+        .update({ description } as any)
+        .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
