@@ -1,8 +1,9 @@
 import { Outlet, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, ListTodo, Brain, Globe, Settings, Zap, Bot, Sparkles,
+  LayoutDashboard, ListTodo, Brain, Globe, Settings, Bot, Sparkles,
   FlaskConical, MapPin, SlidersHorizontal, Building2, User, Users, LogOut,
 } from "lucide-react";
+import sparkLogo from "@/assets/spark-logo.png";
 import { useSettings, useUpdateSetting } from "@/hooks/useSettings";
 import { useAuth, useProfile, useUserRole } from "@/hooks/useAuth";
 import { Switch } from "@/components/ui/switch";
@@ -62,12 +63,7 @@ const SidebarInner = () => {
       <SidebarContent className="flex flex-col h-full">
         {/* Logo */}
         <div className="flex items-center gap-2.5 px-4 py-4">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center shrink-0">
-            <Zap className="w-4 h-4 text-primary-foreground" />
-          </div>
-          {!collapsed && (
-            <span className="text-base font-bold text-foreground tracking-tight">Spark Bot</span>
-          )}
+          <img src={sparkLogo} alt="Spark" className={collapsed ? "h-6 object-contain" : "h-8 object-contain"} />
         </div>
 
         {/* Main nav */}
