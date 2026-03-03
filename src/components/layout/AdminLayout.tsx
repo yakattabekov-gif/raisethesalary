@@ -2,6 +2,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, ListTodo, Brain, Globe, Settings, Bot, Sparkles,
   FlaskConical, MapPin, SlidersHorizontal, Building2, User, Users, LogOut,
+  StickyNote, MessageCircle,
 } from "lucide-react";
 import sparkLogo from "@/assets/spark-logo.png";
 import { useSettings, useUpdateSetting } from "@/hooks/useSettings";
@@ -24,6 +25,8 @@ const mainNavItems = [
   { to: "/directions", icon: MapPin, label: "Направления" },
   { to: "/endpoints", icon: SlidersHorizontal, label: "Поля" },
   { to: "/cities", icon: Building2, label: "Города" },
+  { to: "/notes", icon: StickyNote, label: "Заметки" },
+  { to: "/messenger", icon: MessageCircle, label: "Мессенджер" },
 ];
 
 const settingsNavItems = [
