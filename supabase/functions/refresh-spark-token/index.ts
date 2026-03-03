@@ -20,37 +20,51 @@ Deno.serve(async (req) => {
     const { data: settings } = await supabaseAdmin
       .from("settings")
       .select("key, value")
-      .in("key", ["spark_login_url", "spark_login_email", "spark_login_password"]);
+      .in("key", [
+        "spark_login_url",
+        "spark_login_email",
+        "spark_login_password",
+        "spark_client_id",
+        "spark_client_secret",
+      ]);
 
-    const settingsMap: Record<string, string> = {};
-    settings?.forEach((s: any) => (settingsMap[s.key] = s.value));
+    const s: Record<string, string> = {};
+    settings?.forEach((r: any) => (s[r.key] = r.value));
 
-    const loginUrl = settingsMap.spark_login_url || "https://bpms.spark.kz/api/auth/login";
-    const email = settingsMap.spark_login_email;
-    const password = settingsMap.spark_login_password;
+    const loginUrl = s.spark_login_url || "https://gateway.spark.kz/oauth/token";
+    const username = s.spark_login_email;
+    const password = s.spark_login_password;
+    const clientId = s.spark_client_id || "1";
+    const clientSecret = s.spark_client_secret || "trnKSu6l3IIGH9IheQAgkdlB6ZJP2CtQXIPzPAjQ";
 
-    if (!email || !password) {
+    if (!username || !password) {
       throw new Error("Spark login credentials not configured in settings");
     }
 
-    // Decrypt password (base64 obfuscation layer)
+    // Decrypt password if base64-encoded
     let decryptedPassword = password;
     try {
-      decryptedPassword = atob(password);
+      const decoded = atob(password);
+      if (decoded.length > 0) decryptedPassword = decoded;
     } catch {
-      // If not base64, use as-is
+      // not base64, use as-is
     }
 
-    console.log(`Attempting Spark login for: ${email}`);
+    console.log(`Attempting Spark OAuth login for: ${username}`);
 
-    // Login to Spark BPMS
     const loginResponse = await fetch(loginUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Accept": "application/json",
       },
-      body: JSON.stringify({ email, password: decryptedPassword }),
+      body: JSON.stringify({
+        username,
+        password: decryptedPassword,
+        client_id: Number(clientId),
+        client_secret: clientSecret,
+        grant_type: "password",
+      }),
     });
 
     if (!loginResponse.ok) {
@@ -59,19 +73,16 @@ Deno.serve(async (req) => {
     }
 
     const loginData = await loginResponse.json();
-    
-    // Extract token - try common response structures
-    const token = loginData.token || loginData.access_token || loginData.data?.token || loginData.data?.access_token;
-    
+    const token = loginData.access_token || loginData.token;
+
     if (!token) {
       console.error("Login response:", JSON.stringify(loginData));
-      throw new Error("No token found in Spark login response");
+      throw new Error("No access_token found in Spark login response");
     }
 
-    // Encode token for storage (base64 obfuscation)
+    // Store token (base64 encoded for obfuscation)
     const encodedToken = btoa(token);
 
-    // Update the bearer token in settings
     await supabaseAdmin
       .from("settings")
       .upsert(
@@ -79,7 +90,6 @@ Deno.serve(async (req) => {
         { onConflict: "key" }
       );
 
-    // Log the refresh
     await supabaseAdmin
       .from("settings")
       .upsert(
