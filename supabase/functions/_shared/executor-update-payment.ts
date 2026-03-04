@@ -58,6 +58,16 @@ export async function executeUpdatePayment(
         temperature_regime_safety_files: logisticsInfo.temperature_regime_safety_files || [],
       };
 
+      // Determine if this is a cod_payment-only change (НП / наложка)
+      const isCodOnly = (paymentData.cod_payment !== null && paymentData.cod_payment !== undefined)
+        && (paymentData.payment_type === null || paymentData.payment_type === undefined)
+        && (paymentData.payment_method === null || paymentData.payment_method === undefined)
+        && (paymentData.cash_sum === null || paymentData.cash_sum === undefined);
+
+      if (isCodOnly) {
+        console.log(`[${VERSION}] update_payment ${invoice}: COD-only change detected, preserving payment_type/method/cash_sum`);
+      }
+
       // cod_payment: only change if mutable AND AI provided a value
       if (isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
         updatePayload.cod_payment = Number(paymentData.cod_payment);
@@ -65,22 +75,22 @@ export async function executeUpdatePayment(
         updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
       }
 
-      // payment_type: only change if mutable AND AI provided a value
-      if (isFieldMutable(mutable, "payment_type") && paymentData.payment_type !== null && paymentData.payment_type !== undefined) {
+      // payment_type: only change if mutable AND AI provided a non-null value AND this is NOT a cod-only change
+      if (!isCodOnly && isFieldMutable(mutable, "payment_type") && paymentData.payment_type !== null && paymentData.payment_type !== undefined) {
         updatePayload.payment_type = Number(paymentData.payment_type);
       } else {
         updatePayload.payment_type = Number(logisticsInfo.payment_type ?? 2);
       }
 
-      // payment_method: only change if mutable AND AI provided a value
-      if (isFieldMutable(mutable, "payment_method") && paymentData.payment_method !== null && paymentData.payment_method !== undefined) {
+      // payment_method: only change if mutable AND AI provided a non-null value AND this is NOT a cod-only change
+      if (!isCodOnly && isFieldMutable(mutable, "payment_method") && paymentData.payment_method !== null && paymentData.payment_method !== undefined) {
         updatePayload.payment_method = Number(paymentData.payment_method);
       } else {
         updatePayload.payment_method = Number(logisticsInfo.payment_method ?? 4);
       }
 
-      // cash_sum: only change if mutable AND AI provided a value
-      if (isFieldMutable(mutable, "cash_sum") && paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
+      // cash_sum: only change if mutable AND AI provided a non-null value AND this is NOT a cod-only change
+      if (!isCodOnly && isFieldMutable(mutable, "cash_sum") && paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
         updatePayload.cash_sum = paymentData.cash_sum;
       } else {
         updatePayload.cash_sum = logisticsInfo.cash_sum || 0;
