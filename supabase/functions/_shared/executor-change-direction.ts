@@ -7,7 +7,16 @@ export async function executeChangeDirection(
   const sparkUrl = settings.spark_base_url || "https://gateway.spark-dev.team/cabinet/api/v2";
   const sparkToken = settings.spark_bearer_token;
   const invoices = aiResult.invoices || [];
+  
+  // Support both formats: { city: "Алматы - Калбатау" } and { from_city: "Алматы", to_city: "Калбатау" }
   let targetCity = aiResult.city;
+  if (!targetCity && aiResult.from_city && aiResult.to_city) {
+    targetCity = `${aiResult.from_city} - ${aiResult.to_city}`;
+    console.log(`[${VERSION}] Constructed city pair from from_city/to_city: "${targetCity}"`);
+  } else if (!targetCity && aiResult.to_city) {
+    targetCity = aiResult.to_city;
+    console.log(`[${VERSION}] Using to_city as target: "${targetCity}"`);
+  }
 
   if (!targetCity) {
     return [{ invoice: "N/A", success: false, error: "Город назначения не указан" }];
