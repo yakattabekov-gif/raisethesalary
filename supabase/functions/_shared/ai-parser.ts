@@ -460,14 +460,21 @@ function getBuiltInPrompt(): string {
 
 Правила для payment:
 - payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — НЕ УКАЗЫВАЙ (null).
-- payment_method: 4 = наличка, 2 = платежи/безнал/каспий/kaspi. Если не указано — НЕ УКАЗЫВАЙ (null).
+- payment_method: 4 = наличка/наличные, 2 = каспий/kaspi/безнал/платежи. Если не указано — НЕ УКАЗЫВАЙ (null).
 - cash_sum: ТОЛЬКО если сумма ЯВНО указана. Иначе null.
 - Если у каждой накладной СВОЯ сумма — создай ОТДЕЛЬНЫЙ update_payment для каждой!
 
+КРИТИЧЕСКИ ВАЖНО — "ВНЕСТИ СУММУ" / "НАЛИЧКА" / "КАСПИ" (БЕЗ упоминания НП):
+Когда пишут "внести сумму", "внести сумму наличку", "внести сумму на каспи", "сумма за перевозку" и НЕТ слов "НП"/"наложка"/"наложный платеж" — это ОПЛАТА ЗА ПЕРЕВОЗКУ!
+- "внести сумму на каспи 18932" → payment: {"cash_sum": 18932, "payment_method": 2, "payment_type": null, "cod_payment": null}
+- "внести сумму наличку 5000" → payment: {"cash_sum": 5000, "payment_method": 4, "payment_type": null, "cod_payment": null}
+- "внести сумму 10000" (без уточнения метода) → payment: {"cash_sum": 10000, "payment_method": null, "payment_type": null, "cod_payment": null}
+НЕ ОТКЛОНЯЙ такие заявки! Это стандартная операция update_payment!
+
 КРИТИЧЕСКИ ВАЖНО — НАЛОЖНЫЙ ПЛАТЕЖ (НП / наложка / cod_payment):
 НП (наложный платёж) — это ОТДЕЛЬНОЕ поле cod_payment! Это НЕ payment_type, НЕ payment_method, НЕ cash_sum!
-- "Убрать НП", "снять наложку", "убрать наложный платеж" → payment: {"cod_payment": 0} — ТОЛЬКО cod_payment! Все остальные поля null!
-- "Добавить НП 5000", "наложка 5000" → payment: {"cod_payment": 5000} — ТОЛЬКО cod_payment! Все остальные поля null!
+- "Убрать НП", "снять наложку", "убрать наложный платеж" → payment: {"cod_payment": 0, "payment_type": null, "payment_method": null, "cash_sum": null}
+- "Добавить НП 5000", "наложка 5000" → payment: {"cod_payment": 5000, "payment_type": null, "payment_method": null, "cash_sum": null}
 - Когда в заявке речь ТОЛЬКО про НП/наложку — НЕ ТРОГАЙ payment_type, payment_method и cash_sum! Ставь их в null!
 
 ПРАВИЛА ДЛЯ ФТЛ ЗАКАЗОВ (4-значные номера):
