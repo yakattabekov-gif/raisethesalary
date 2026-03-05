@@ -68,10 +68,17 @@ export async function executeUpdatePayment(
         console.log(`[${VERSION}] update_payment ${invoice}: COD-only change detected, preserving payment_type/method/cash_sum`);
       }
 
-      // cod_payment: only change if mutable AND AI provided a value
-      if (isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
+      // cod_payment: only change if mutable AND this is a COD-specific change (isCodOnly)
+      // OR if AI explicitly provided a positive cod_payment value
+      // NEVER send 0 for cod_payment unless explicitly asked to remove НП (isCodOnly with cod_payment=0)
+      if (isCodOnly && isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
+        // Explicit COD change (add/remove НП)
+        updatePayload.cod_payment = Number(paymentData.cod_payment);
+      } else if (!isCodOnly && isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined && Number(paymentData.cod_payment) > 0) {
+        // Non-COD change but AI provided a positive cod_payment — apply it
         updatePayload.cod_payment = Number(paymentData.cod_payment);
       } else {
+        // Preserve original cod_payment
         updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
       }
 
