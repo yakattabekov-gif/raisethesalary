@@ -123,11 +123,39 @@ async function executeAllActions(
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  console.log(`[${VERSION}] Request received at ${new Date().toISOString()}`);
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
+
+  // --- Auth: allow service-role (cron) or admin user ---
+  const authHeader = req.headers.get("Authorization") || "";
+  const token = authHeader.replace("Bearer ", "");
+  const isServiceRole = token === supabaseKey;
+
+  if (!isServiceRole) {
+    // Verify it's a real admin user
+    if (!token) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: claimsData, error: claimsError } = await supabase.auth.getUser(token);
+    if (claimsError || !claimsData?.user) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const { data: roles } = await supabase
+      .from("user_roles").select("role")
+      .eq("user_id", claimsData.user.id).eq("role", "admin");
+    if (!roles?.length) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+  }
+
+  console.log(`[${VERSION}] Request received at ${new Date().toISOString()}`);
 
   const { data: cronRun } = await supabase
     .from("cron_runs").insert({ status: "running" }).select().single();

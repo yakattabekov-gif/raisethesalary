@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.refresh-spark-token]
 verify_jwt = false
+
+[functions.process-jira-tasks]
+verify_jwt = false
