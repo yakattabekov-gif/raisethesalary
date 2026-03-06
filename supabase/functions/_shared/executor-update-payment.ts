@@ -1,4 +1,4 @@
-import { VERSION, searchInvoice, getLogisticsInfo, resolveShipmentType, getMutableFields, isFieldMutable } from "./helpers.ts";
+import { VERSION, searchInvoice, getLogisticsInfo, resolveShipmentType, resolvePaymentType, resolvePaymentMethod, getMutableFields, isFieldMutable } from "./helpers.ts";
 
 export async function executeUpdatePayment(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -59,22 +59,29 @@ export async function executeUpdatePayment(
       };
 
       // Determine if this is a cod_payment-only change (НП / наложка)
-      const isCodOnly = (paymentData.cod_payment !== null && paymentData.cod_payment !== undefined)
-        && (paymentData.payment_type === null || paymentData.payment_type === undefined)
-        && (paymentData.payment_method === null || paymentData.payment_method === undefined)
-        && (paymentData.cash_sum === null || paymentData.cash_sum === undefined);
+      // Check: AI provided cod_payment AND did NOT provide valid numeric payment_type/method/cash_sum
+      const hasValidPaymentType = paymentData.payment_type !== null && paymentData.payment_type !== undefined && !isNaN(Number(paymentData.payment_type)) && Number(paymentData.payment_type) > 0;
+      const hasValidPaymentMethod = paymentData.payment_method !== null && paymentData.payment_method !== undefined && !isNaN(Number(paymentData.payment_method)) && Number(paymentData.payment_method) > 0;
+      const hasValidCashSum = paymentData.cash_sum !== null && paymentData.cash_sum !== undefined && Number(paymentData.cash_sum) > 0;
+      const hasCodPayment = paymentData.cod_payment !== null && paymentData.cod_payment !== undefined;
+
+      const isCodOnly = hasCodPayment && !hasValidPaymentType && !hasValidPaymentMethod && !hasValidCashSum;
 
       if (isCodOnly) {
         console.log(`[${VERSION}] update_payment ${invoice}: COD-only change detected, preserving payment_type/method/cash_sum`);
       }
 
+      // Resolve original payment_type and payment_method from strings to numbers
+      const originalPaymentType = resolvePaymentType(logisticsInfo.payment_type);
+      const originalPaymentMethod = resolvePaymentMethod(logisticsInfo.payment_method);
+
       // cod_payment: only change if mutable AND this is a COD-specific change (isCodOnly)
       // OR if AI explicitly provided a positive cod_payment value
       // NEVER send 0 for cod_payment unless explicitly asked to remove НП (isCodOnly with cod_payment=0)
-      if (isCodOnly && isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined) {
+      if (isCodOnly && isFieldMutable(mutable, "cod_payment") && hasCodPayment) {
         // Explicit COD change (add/remove НП)
         updatePayload.cod_payment = Number(paymentData.cod_payment);
-      } else if (!isCodOnly && isFieldMutable(mutable, "cod_payment") && paymentData.cod_payment !== null && paymentData.cod_payment !== undefined && Number(paymentData.cod_payment) > 0) {
+      } else if (!isCodOnly && isFieldMutable(mutable, "cod_payment") && hasCodPayment && Number(paymentData.cod_payment) > 0) {
         // Non-COD change but AI provided a positive cod_payment — apply it
         updatePayload.cod_payment = Number(paymentData.cod_payment);
       } else {
@@ -82,22 +89,28 @@ export async function executeUpdatePayment(
         updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
       }
 
-      // payment_type: only change if mutable AND AI provided a non-null value AND this is NOT a cod-only change
-      if (!isCodOnly && isFieldMutable(mutable, "payment_type") && paymentData.payment_type !== null && paymentData.payment_type !== undefined) {
+      // payment_type: ALWAYS preserve original if isCodOnly. Otherwise change only if mutable AND AI provided valid value
+      if (isCodOnly) {
+        updatePayload.payment_type = originalPaymentType;
+      } else if (isFieldMutable(mutable, "payment_type") && hasValidPaymentType) {
         updatePayload.payment_type = Number(paymentData.payment_type);
       } else {
-        updatePayload.payment_type = Number(logisticsInfo.payment_type ?? 2);
+        updatePayload.payment_type = originalPaymentType;
       }
 
-      // payment_method: only change if mutable AND AI provided a non-null value AND this is NOT a cod-only change
-      if (!isCodOnly && isFieldMutable(mutable, "payment_method") && paymentData.payment_method !== null && paymentData.payment_method !== undefined) {
+      // payment_method: ALWAYS preserve original if isCodOnly. Otherwise change only if mutable AND AI provided valid value
+      if (isCodOnly) {
+        updatePayload.payment_method = originalPaymentMethod;
+      } else if (isFieldMutable(mutable, "payment_method") && hasValidPaymentMethod) {
         updatePayload.payment_method = Number(paymentData.payment_method);
       } else {
-        updatePayload.payment_method = Number(logisticsInfo.payment_method ?? 4);
+        updatePayload.payment_method = originalPaymentMethod;
       }
 
-      // cash_sum: only change if mutable AND AI provided a non-null value AND this is NOT a cod-only change
-      if (!isCodOnly && isFieldMutable(mutable, "cash_sum") && paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
+      // cash_sum: ALWAYS preserve original if isCodOnly. Otherwise change only if mutable AND AI provided valid value
+      if (isCodOnly) {
+        updatePayload.cash_sum = logisticsInfo.cash_sum || 0;
+      } else if (isFieldMutable(mutable, "cash_sum") && paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
         updatePayload.cash_sum = paymentData.cash_sum;
       } else {
         updatePayload.cash_sum = logisticsInfo.cash_sum || 0;
