@@ -85,9 +85,9 @@ const Dashboard = () => {
   return (
     <div className="space-y-8">
       {/* Hero header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-extrabold text-foreground tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
             Обзор системы
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">
@@ -189,6 +189,7 @@ const Dashboard = () => {
       <div>
         <h2 className="text-lg font-semibold text-foreground mb-4">Последние запуски</h2>
         <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+          <div className="data-table-wrapper">
           <table className="data-table">
             <thead>
               <tr>
@@ -231,6 +232,7 @@ const Dashboard = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

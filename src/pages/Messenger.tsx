@@ -423,7 +423,7 @@ const Messenger = () => {
     : "";
 
   return (
-    <div className="h-[calc(100vh-7rem)] flex rounded-xl border border-border overflow-hidden bg-background">
+    <div className="h-[calc(100vh-5rem)] sm:h-[calc(100vh-7rem)] flex rounded-xl border border-border overflow-hidden bg-background">
       {/* Call overlay */}
       {activeCallState && (activeCallState.status === "ringing" || activeCallState.status === "active") && (
         <CallOverlay

@@ -70,6 +70,7 @@ const Requests = () => {
       </div>
 
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="data-table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
@@ -242,6 +243,7 @@ const Requests = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -48,6 +48,7 @@ const LogsCurl = () => {
       </div>
 
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="data-table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
@@ -121,6 +122,7 @@ const LogsCurl = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
