@@ -14,29 +14,41 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    // Verify caller is admin
+    // Require auth header
     const authHeader = req.headers.get("Authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      const payloadBase64 = token.split(".")[1];
-      const payload = payloadBase64 ? JSON.parse(atob(payloadBase64)) : null;
-      if (payload?.sub) {
-        const callerId = payload.sub as string;
-        const { data: roles } = await supabaseAdmin
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", callerId)
-          .eq("role", "admin");
-        
-        // Allow if admin OR if no users exist yet (bootstrap)
-        const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true });
-        if ((!roles || roles.length === 0) && (count ?? 0) > 0) {
-          return new Response(JSON.stringify({ error: "Not authorized" }), {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Not authorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+
+    // Verify JWT cryptographically via Supabase
+    const { data: claimsData, error: claimsError } = await supabaseAdmin.auth.getUser(token);
+    if (claimsError || !claimsData?.user) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const callerId = claimsData.user.id;
+
+    // Check if caller is admin, or allow bootstrap if no users exist
+    const { data: roles } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", callerId)
+      .eq("role", "admin");
+
+    const { count } = await supabaseAdmin.from("user_roles").select("*", { count: "exact", head: true });
+    if ((!roles || roles.length === 0) && (count ?? 0) > 0) {
+      return new Response(JSON.stringify({ error: "Not authorized" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const { email, password, full_name, role } = await req.json();
