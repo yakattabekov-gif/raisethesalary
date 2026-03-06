@@ -179,6 +179,34 @@ export async function getLogisticsInfo(sparkUrl: string, sparkToken: string, ite
   return fullData.data || fullData;
 }
 
+// Resolve payment_type: API may return string ("Отправителем", "Получателем") or number
+export function resolvePaymentType(val: any): number {
+  if (val == null) return 2; // default: Получателем
+  const num = Number(val);
+  if (!isNaN(num) && num > 0) return num;
+  const map: Record<string, number> = {
+    "отправителем": 1, "sender": 1, "отправитель": 1,
+    "получателем": 2, "receiver": 2, "получатель": 2,
+  };
+  const key = String(val).toLowerCase().trim();
+  return map[key] ?? 2;
+}
+
+// Resolve payment_method: API may return string ("Наличными", "Kaspi", etc.) or number
+export function resolvePaymentMethod(val: any): number {
+  if (val == null) return 4; // default: Наличные
+  const num = Number(val);
+  if (!isNaN(num) && num > 0) return num;
+  const map: Record<string, number> = {
+    "накладная": 1, "накладной": 1, "invoice": 1,
+    "kaspi": 2, "каспи": 2,
+    "перевод": 3, "перечисление": 3, "перечислением": 3, "перечислением на счет": 3, "transfer": 3,
+    "наличные": 4, "наличными": 4, "cash": 4, "наличка": 4,
+  };
+  const key = String(val).toLowerCase().trim();
+  return map[key] ?? 4;
+}
+
 // Resolve shipment_type: API may return string ("Стандарт", "Экспресс", "Авиа") or number
 export function resolveShipmentType(val: any): number {
   if (val == null) return 1;
