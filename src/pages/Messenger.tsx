@@ -30,6 +30,28 @@ const formatTime = (d: string) => new Date(d).toLocaleTimeString("ru-RU", { hour
 const formatDate = (d: string) => new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 const formatDuration = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
+// Resolve storage path to short-lived signed URL (1 hour), with in-memory cache
+const signedUrlCache = new Map<string, { url: string; expires: number }>();
+const resolveFileUrl = async (path: string): Promise<string> => {
+  // If it's already a full URL (legacy data), return as-is
+  if (path.startsWith("http")) return path;
+  const cached = signedUrlCache.get(path);
+  if (cached && cached.expires > Date.now()) return cached.url;
+  const { data, error } = await supabase.storage.from("chat-attachments").createSignedUrl(path, 3600);
+  if (error || !data?.signedUrl) return path;
+  signedUrlCache.set(path, { url: data.signedUrl, expires: Date.now() + 3500 * 1000 });
+  return data.signedUrl;
+};
+
+const useResolvedUrl = (path: string | null) => {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!path) return;
+    resolveFileUrl(path).then(setUrl);
+  }, [path]);
+  return url;
+};
+
 const getConvDisplayName = (conv: Conversation, userId: string) => {
   if (conv.is_group) return conv.name || "Групповой чат";
   const other = conv.participants?.find((p) => p.user_id !== userId);
@@ -80,6 +102,7 @@ const ConvItem = ({ conv, userId, active, onClick }: { conv: Conversation; userI
 const MessageBubble = ({ msg, isMine, onReply, onDelete }: { msg: Message; isMine: boolean; onReply: (m: Message) => void; onDelete: (id: string) => void }) => {
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const resolvedUrl = useResolvedUrl(msg.file_url);
 
   if (msg.is_deleted) {
     return (
@@ -96,7 +119,7 @@ const MessageBubble = ({ msg, isMine, onReply, onDelete }: { msg: Message; isMin
       case "image":
         return (
           <div className="space-y-1">
-            <img src={msg.file_url!} alt={msg.file_name || "image"} className="max-w-[250px] rounded-lg cursor-pointer" onClick={() => window.open(msg.file_url!, "_blank")} />
+            {resolvedUrl ? <img src={resolvedUrl} alt={msg.file_name || "image"} className="max-w-[250px] rounded-lg cursor-pointer" onClick={() => window.open(resolvedUrl, "_blank")} /> : <span className="text-xs text-muted-foreground">Загрузка...</span>}
             {msg.content && <p className="text-sm">{msg.content}</p>}
           </div>
         );
@@ -107,12 +130,12 @@ const MessageBubble = ({ msg, isMine, onReply, onDelete }: { msg: Message; isMin
               {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             </button>
             <div className="flex-1 h-1 bg-foreground/20 rounded-full"><div className="h-full w-1/2 bg-primary rounded-full" /></div>
-            <audio ref={audioRef} src={msg.file_url!} onEnded={() => setPlaying(false)} />
+            <audio ref={audioRef} src={resolvedUrl || ""} onEnded={() => setPlaying(false)} />
           </div>
         );
       case "file":
         return (
-          <a href={msg.file_url!} target="_blank" rel="noopener" className="flex items-center gap-2 text-sm hover:underline">
+          <a href={resolvedUrl || "#"} target="_blank" rel="noopener" className="flex items-center gap-2 text-sm hover:underline">
             <FileIcon className="w-4 h-4 shrink-0" />
             <span className="truncate">{msg.file_name || "Файл"}</span>
             {msg.file_size && <span className="text-[10px] text-muted-foreground shrink-0">{(msg.file_size / 1024).toFixed(0)} KB</span>}
@@ -279,15 +302,13 @@ const Messenger = () => {
       const path = `${user.id}/${Date.now()}-${file.name}`;
       const { error: uploadErr } = await supabase.storage.from("chat-attachments").upload(path, file);
       if (uploadErr) throw uploadErr;
-      const { data: signedData, error: signErr } = await supabase.storage.from("chat-attachments").createSignedUrl(path, 60 * 60 * 24 * 365);
-      if (signErr || !signedData?.signedUrl) throw signErr || new Error("Failed to get signed URL");
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
       await sendMessage.mutateAsync({
         conversation_id: activeConv,
         sender_id: user.id,
         message_type: isImage ? "image" : isVideo ? "file" : "file",
-        file_url: signedData.signedUrl,
+        file_url: path,
         file_name: file.name,
         file_size: file.size,
         file_type: file.type,
@@ -309,13 +330,11 @@ const Messenger = () => {
         const path = `${user.id}/${Date.now()}-voice.webm`;
         const { error } = await supabase.storage.from("chat-attachments").upload(path, blob);
         if (error) throw error;
-        const { data: signedData2, error: signErr2 } = await supabase.storage.from("chat-attachments").createSignedUrl(path, 60 * 60 * 24 * 365);
-        if (signErr2 || !signedData2?.signedUrl) throw signErr2 || new Error("Failed to get signed URL");
         await sendMessage.mutateAsync({
           conversation_id: activeConv,
           sender_id: user.id,
           message_type: "voice",
-          file_url: signedData2.signedUrl,
+          file_url: path,
           file_name: "voice.webm",
           file_size: blob.size,
           file_type: "audio/webm",
