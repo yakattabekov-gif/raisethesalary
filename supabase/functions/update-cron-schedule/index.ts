@@ -12,19 +12,36 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-  const supabase = createClient(supabaseUrl, serviceKey);
+  const supabaseAdmin = createClient(supabaseUrl, serviceKey);
+
+  // Verify caller is admin
+  const authHeader = req.headers.get("authorization") || "";
+  const token = authHeader.replace("Bearer ", "");
+  const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+  if (authError || !user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const { data: roles } = await supabaseAdmin
+    .from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin");
+  if (!roles?.length) {
+    return new Response(JSON.stringify({ error: "Forbidden: admin only" }), {
+      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   try {
     const { schedule } = await req.json();
     if (!schedule) throw new Error("schedule is required (cron expression, e.g. '*/2 * * * *')");
 
     // Unschedule existing job if any
-    await supabase.rpc("unschedule_cron_job", { job_name: "process-jira-tasks-cron" }).catch(() => {});
+    await supabaseAdmin.rpc("unschedule_cron_job", { job_name: "process-jira-tasks-cron" }).catch(() => {});
 
     // Use raw SQL via pg function to schedule new cron
     const functionUrl = `${supabaseUrl}/functions/v1/process-jira-tasks`;
     
-    const { error } = await supabase.rpc("schedule_cron_job", {
+    const { error } = await supabaseAdmin.rpc("schedule_cron_job", {
       job_name: "process-jira-tasks-cron",
       cron_schedule: schedule,
       function_url: functionUrl,

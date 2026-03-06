@@ -279,14 +279,15 @@ const Messenger = () => {
       const path = `${user.id}/${Date.now()}-${file.name}`;
       const { error: uploadErr } = await supabase.storage.from("chat-attachments").upload(path, file);
       if (uploadErr) throw uploadErr;
-      const { data: { publicUrl } } = supabase.storage.from("chat-attachments").getPublicUrl(path);
+      const { data: signedData, error: signErr } = await supabase.storage.from("chat-attachments").createSignedUrl(path, 60 * 60 * 24 * 365);
+      if (signErr || !signedData?.signedUrl) throw signErr || new Error("Failed to get signed URL");
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
       await sendMessage.mutateAsync({
         conversation_id: activeConv,
         sender_id: user.id,
         message_type: isImage ? "image" : isVideo ? "file" : "file",
-        file_url: publicUrl,
+        file_url: signedData.signedUrl,
         file_name: file.name,
         file_size: file.size,
         file_type: file.type,
@@ -308,12 +309,13 @@ const Messenger = () => {
         const path = `${user.id}/${Date.now()}-voice.webm`;
         const { error } = await supabase.storage.from("chat-attachments").upload(path, blob);
         if (error) throw error;
-        const { data: { publicUrl } } = supabase.storage.from("chat-attachments").getPublicUrl(path);
+        const { data: signedData2, error: signErr2 } = await supabase.storage.from("chat-attachments").createSignedUrl(path, 60 * 60 * 24 * 365);
+        if (signErr2 || !signedData2?.signedUrl) throw signErr2 || new Error("Failed to get signed URL");
         await sendMessage.mutateAsync({
           conversation_id: activeConv,
           sender_id: user.id,
           message_type: "voice",
-          file_url: publicUrl,
+          file_url: signedData2.signedUrl,
           file_name: "voice.webm",
           file_size: blob.size,
           file_type: "audio/webm",
