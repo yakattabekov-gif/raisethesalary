@@ -45,7 +45,7 @@ serve(async (req) => {
       job_name: "process-jira-tasks-cron",
       cron_schedule: schedule,
       function_url: functionUrl,
-      anon_key: anonKey,
+      anon_key: serviceKey,
     });
 
     if (error) throw error;
