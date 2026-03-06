@@ -181,7 +181,7 @@ const AdminLayout = () => {
           <header className="h-12 flex items-center border-b border-border px-4 bg-background/80 backdrop-blur-xl sticky top-0 z-50">
             <SidebarTrigger />
           </header>
-          <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+          <main className="flex-1 p-3 sm:p-6 max-w-7xl w-full mx-auto">
             <Outlet />
           </main>
         </div>

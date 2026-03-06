@@ -109,14 +109,17 @@
   }
 
   /* Clean data table */
+  .data-table-wrapper {
+    @apply w-full overflow-x-auto -mx-px;
+  }
   .data-table {
-    @apply w-full text-sm;
+    @apply w-full text-sm min-w-[600px];
   }
   .data-table thead tr {
     @apply border-b border-border;
   }
   .data-table th {
-    @apply text-left px-4 py-3 text-xs font-medium text-muted-foreground;
+    @apply text-left px-4 py-3 text-xs font-medium text-muted-foreground whitespace-nowrap;
   }
   .data-table tbody tr {
     @apply border-b border-border/50 transition-colors hover:bg-muted/50;
