@@ -35,10 +35,10 @@ Deno.serve(async (req) => {
     const username = s.spark_login_email;
     const password = s.spark_login_password;
     const clientId = s.spark_client_id || "1";
-    const clientSecret = s.spark_client_secret || "trnKSu6l3IIGH9IheQAgkdlB6ZJP2CtQXIPzPAjQ";
+    const clientSecret = s.spark_client_secret;
 
-    if (!username || !password) {
-      throw new Error("Spark login credentials not configured in settings");
+    if (!username || !password || !clientSecret) {
+      throw new Error("Spark login credentials not configured in settings (username, password, client_secret required)");
     }
 
     console.log(`Attempting Spark OAuth login for: ${username}`);
