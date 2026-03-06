@@ -74,7 +74,13 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    console.error("[admin-create-user] Error:", error);
+    const msg = error.message?.includes("already been registered")
+      ? "A user with this email already exists"
+      : error.message?.includes("Password")
+        ? error.message
+        : "An internal error occurred";
+    return new Response(JSON.stringify({ error: msg }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

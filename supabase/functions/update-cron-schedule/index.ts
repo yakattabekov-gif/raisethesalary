@@ -54,8 +54,10 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 500,
+    console.error("[update-cron-schedule] Error:", e);
+    const isUserError = e.message?.includes("schedule is required");
+    return new Response(JSON.stringify({ error: isUserError ? e.message : "Failed to update schedule" }), {
+      status: isUserError ? 400 : 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

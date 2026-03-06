@@ -126,10 +126,11 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error: any) {
-    console.error("Token refresh error:", error.message);
+    console.error("[refresh-spark-token] Error:", error);
+    const isConfig = error.message?.includes("not configured");
     return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: isConfig ? error.message : "Token refresh failed" }),
+      { status: isConfig ? 400 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
