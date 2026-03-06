@@ -98,8 +98,11 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 400,
+    console.error("[admin-manage-user] Error:", error);
+    const userErrors = ["Password must be", "Email is required", "Role is required", "Unknown action"];
+    const isUserError = userErrors.some((e) => error.message?.includes(e));
+    return new Response(JSON.stringify({ error: isUserError ? error.message : "An internal error occurred" }), {
+      status: isUserError ? 400 : 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

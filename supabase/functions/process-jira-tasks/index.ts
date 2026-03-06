@@ -367,7 +367,7 @@ serve(async (req) => {
     await supabase.from("cron_runs").update({
       finished_at: new Date().toISOString(), status: "error", error_message: error.message,
     }).eq("id", cronRun?.id);
-    return new Response(JSON.stringify({ error: error.message, _version: VERSION }), {
+    return new Response(JSON.stringify({ error: "Task processing failed", _version: VERSION }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
