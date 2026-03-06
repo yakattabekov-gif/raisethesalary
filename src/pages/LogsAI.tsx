@@ -48,6 +48,7 @@ const LogsAI = () => {
       </div>
 
       <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
+        <div className="data-table-wrapper">
         <table className="data-table">
           <thead>
             <tr>
@@ -119,6 +120,7 @@ const LogsAI = () => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
