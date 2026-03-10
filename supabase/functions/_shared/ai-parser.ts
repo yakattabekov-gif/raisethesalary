@@ -258,6 +258,24 @@ export async function parseWithAI(
   // Phone validation on final result
   validatePhones(finalResult, summary, description);
 
+  // Strip "Казахстан" from city fields — it's a country, not a city
+  if (finalResult.actions) {
+    for (const action of finalResult.actions) {
+      if (action.address?.city && action.address.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
+        console.log(`[${VERSION}] Post-process: stripped "Казахстан" from address.city`);
+        action.address.city = null;
+      }
+      if (action.city && action.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
+        console.log(`[${VERSION}] Post-process: stripped "Казахстан" from action.city`);
+        action.city = null;
+      }
+      // Also strip from full_address prefix
+      if (action.address?.full_address) {
+        action.address.full_address = action.address.full_address.replace(/^Казахстан,?\s*/i, "");
+      }
+    }
+  }
+
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "ai_parse", step: "final_result",
     request_data: { summary, description },
@@ -455,7 +473,7 @@ function getBuiltInPrompt(): string {
       "action": "change_sender_direction",
       "invoices": ["SP00494613"],
       "city": "Алмата",
-      "address": {"city": "Алмата", "street": "Толе би", "house": "101", "full_address": "Казахстан, г. Алмата, ул. Толе би, 101"},
+      "address": {"city": "Алмата", "street": "Толе би", "house": "101", "full_address": "г. Алмата, ул. Толе би, 101"},
       "sender": {"full_name": "Мейржан", "phone": "+77763136078", "entity": "Мейржан"}
     }
   ]
@@ -525,7 +543,7 @@ function getBuiltInPrompt(): string {
 6. Телефон: замени первую 8 на +7 (87773954884 → +77773954884).
 7. ДОП.НОМЕР: Если 2 номера — первый в "phone", второй в "additional_phone".
 8. ГОРОД: Если не указан явно — city: null.
-9. full_address: без города → "ул. {улица}, {дом}". С городом → "Казахстан, г. {город}, ул. {улица}, {дом}".
+9. full_address: без города → "ул. {улица}, {дом}". С городом → "г. {город}, ул. {улица}, {дом}". НЕ ДОБАВЛЯЙ "Казахстан" в full_address!
 
 ВЕРНИ ТОЛЬКО JSON, без текста вокруг.`;
 }
