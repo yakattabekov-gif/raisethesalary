@@ -258,6 +258,24 @@ export async function parseWithAI(
   // Phone validation on final result
   validatePhones(finalResult, summary, description);
 
+  // Strip "Казахстан" from city fields — it's a country, not a city
+  if (finalResult.actions) {
+    for (const action of finalResult.actions) {
+      if (action.address?.city && action.address.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
+        console.log(`[${VERSION}] Post-process: stripped "Казахстан" from address.city`);
+        action.address.city = null;
+      }
+      if (action.city && action.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
+        console.log(`[${VERSION}] Post-process: stripped "Казахстан" from action.city`);
+        action.city = null;
+      }
+      // Also strip from full_address prefix
+      if (action.address?.full_address) {
+        action.address.full_address = action.address.full_address.replace(/^Казахстан,?\s*/i, "");
+      }
+    }
+  }
+
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "ai_parse", step: "final_result",
     request_data: { summary, description },
