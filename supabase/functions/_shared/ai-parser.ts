@@ -455,7 +455,7 @@ function getBuiltInPrompt(): string {
       "action": "change_sender_direction",
       "invoices": ["SP00494613"],
       "city": "Алмата",
-      "address": {"city": "Алмата", "street": "Толе би", "house": "101", "full_address": "Казахстан, г. Алмата, ул. Толе би, 101"},
+      "address": {"city": "Алмата", "street": "Толе би", "house": "101", "full_address": "г. Алмата, ул. Толе би, 101"},
       "sender": {"full_name": "Мейржан", "phone": "+77763136078", "entity": "Мейржан"}
     }
   ]
