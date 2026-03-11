@@ -1,0 +1,2 @@
+DELETE FROM execution_logs WHERE task_id = '0f424852-0499-4100-b3c0-28d491679e9d';
+DELETE FROM processed_tasks WHERE id = '0f424852-0499-4100-b3c0-28d491679e9d';
