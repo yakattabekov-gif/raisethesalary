@@ -11,10 +11,10 @@ export async function executeChangeActNumber(
   try {
     if (!actNumber) throw new Error("Номер АВР не указан");
 
-    const validIds = ftlOrderIds.filter((id: string) => /^\d{4}$/.test(String(id)));
-    if (validIds.length === 0) throw new Error("Нет валидных ФТЛ ID (каждый должен быть ровно 4 цифры)");
+    const validIds = ftlOrderIds.filter((id: string) => /^\d{4,5}$/.test(String(id)));
+    if (validIds.length === 0) throw new Error("Нет валидных ФТЛ ID (каждый должен быть 4-5 цифр)");
 
-    const invalidIds = ftlOrderIds.filter((id: string) => !/^\d{4}$/.test(String(id)));
+    const invalidIds = ftlOrderIds.filter((id: string) => !/^\d{4,5}$/.test(String(id)));
     if (invalidIds.length > 0) {
       console.log(`[${VERSION}] Skipping invalid FTL IDs: ${invalidIds.join(", ")}`);
     }
