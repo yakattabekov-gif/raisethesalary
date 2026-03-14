@@ -182,32 +182,81 @@ export async function executeChangeDirection(
 
         const senderMatchesOrigin = normSenderCity === normOrigin || senderCityId === originMatch.id;
         const receiverMatchesDest = normReceiverCity === normDest || receiverCityId === cityId;
+        const senderMatchesDest = normSenderCity === normDest || senderCityId === cityId;
+        const receiverMatchesOrigin = normReceiverCity === normOrigin || receiverCityId === originMatch.id;
 
-        console.log(`[${VERSION}] Match analysis: sender="${senderCityName}"↔origin="${originMatch.name}"=${senderMatchesOrigin}, receiver="${receiverCityName}"↔dest="${cityName}"=${receiverMatchesDest}`);
+        console.log(`[${VERSION}] Match analysis: sender="${senderCityName}"(${senderCityId}) receiver="${receiverCityName}"(${receiverCityId}) | origin="${originMatch.name}"(${originMatch.id}) dest="${cityName}"(${cityId})`);
+        console.log(`[${VERSION}] Normal: sender↔origin=${senderMatchesOrigin}, receiver↔dest=${receiverMatchesDest} | Swapped: sender↔dest=${senderMatchesDest}, receiver↔origin=${receiverMatchesOrigin}`);
 
+        // Check if the pair is already correct in normal order
         if (senderMatchesOrigin && receiverMatchesDest) {
           results.push({ invoice, success: true, city: cityName, message: "Направление уже соответствует" });
           continue;
         }
 
-        // Simply: sender must be origin, receiver must be destination
-        if (!senderMatchesOrigin) {
-          changeSender = true;
-          senderTargetCityId = originMatch.id;
-          senderTargetCityName = originMatch.name;
+        // Determine if AI parser swapped origin/destination
+        // Score normal assignment vs swapped assignment
+        const normalScore = (senderMatchesOrigin ? 1 : 0) + (receiverMatchesDest ? 1 : 0);
+        const swappedScore = (senderMatchesDest ? 1 : 0) + (receiverMatchesOrigin ? 1 : 0);
+
+        let effectiveOriginId = originMatch.id;
+        let effectiveOriginName = originMatch.name;
+        let effectiveDestId = cityId;
+        let effectiveDestName = cityName;
+
+        if (swappedScore > normalScore) {
+          // AI parser likely swapped origin and destination — correct it
+          console.log(`[${VERSION}] Detected swapped origin/destination (normal=${normalScore}, swapped=${swappedScore}). Correcting: origin="${cityName}", dest="${originMatch.name}"`);
+          effectiveOriginId = cityId;
+          effectiveOriginName = cityName;
+          effectiveDestId = originMatch.id;
+          effectiveDestName = originMatch.name;
         }
-        if (!receiverMatchesDest) {
+
+        const senderNeedsChange = !(normalize(senderCityName) === normalize(effectiveOriginName) || senderCityId === effectiveOriginId);
+        const receiverNeedsChange = !(normalize(receiverCityName) === normalize(effectiveDestName) || receiverCityId === effectiveDestId);
+
+        if (!senderNeedsChange && !receiverNeedsChange) {
+          results.push({ invoice, success: true, city: effectiveDestName, message: "Направление уже соответствует" });
+          continue;
+        }
+
+        if (senderNeedsChange) {
+          changeSender = true;
+          senderTargetCityId = effectiveOriginId;
+          senderTargetCityName = effectiveOriginName;
+        }
+        if (receiverNeedsChange) {
           changeReceiver = true;
+          receiverTargetCityId = effectiveDestId;
+          receiverTargetCityName = effectiveDestName;
         }
 
         await supabase.from("execution_logs").insert({
           task_id: taskId, action: "change_direction", step: "direction_analysis",
-          request_data: { sender_city: senderCityName, receiver_city: receiverCityName, origin: originMatch.name, destination: cityName },
+          request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, parsed_origin: originMatch.name, parsed_destination: cityName, effective_origin: effectiveOriginName, effective_destination: effectiveDestName, swapped: swappedScore > normalScore },
           response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName },
           success: true,
         });
       } else {
-        changeReceiver = true;
+        // Only destination city provided, no origin — smart detection
+        const normReceiverCity = normalize(receiverCityName);
+        const normSenderCity = normalize(senderCityName);
+        const normDest = normalize(cityName);
+
+        if (normReceiverCity === normDest || receiverCityId === cityId) {
+          // Receiver already matches — maybe sender needs changing? Skip, ambiguous without origin.
+          console.log(`[${VERSION}] Receiver already in "${cityName}" — no change needed (no origin specified)`);
+          results.push({ invoice, success: true, city: cityName, message: "Получатель уже в указанном городе" });
+          continue;
+        } else if (normSenderCity === normDest || senderCityId === cityId) {
+          // Sender matches the "destination" — likely it's the receiver that needs changing
+          console.log(`[${VERSION}] Sender is in "${cityName}", changing receiver to "${cityName}"`);
+          changeReceiver = true;
+        } else {
+          // Neither matches — default to changing receiver
+          changeReceiver = true;
+        }
       }
 
       // ---- CHANGE RECEIVER if needed ----
