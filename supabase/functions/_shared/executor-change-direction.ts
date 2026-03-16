@@ -75,84 +75,9 @@ export async function executeChangeDirection(
     response_data: { dest_city_id: cityId, dest_city_name: cityName, origin_city_id: originMatch?.id, origin_city_name: originMatch?.name }, success: true,
   });
 
-  // Check allowed_directions
-  let isAllowedDirection = false;
-  if (originMatch) {
-    const { data: allowedDirs } = await supabase
-      .from("allowed_directions").select("id")
-      .eq("parent_city", originMatch.name).eq("child_city", cityName).limit(1);
-    if (allowedDirs && allowedDirs.length > 0) {
-      isAllowedDirection = true;
-      console.log(`[${VERSION}] Direction "${originMatch.name}" → "${cityName}" is in allowed_directions`);
-    }
-    if (!isAllowedDirection) {
-      const { data: allowedDirsReverse } = await supabase
-        .from("allowed_directions").select("id")
-        .eq("parent_city", cityName).eq("child_city", originMatch.name).limit(1);
-      if (allowedDirsReverse && allowedDirsReverse.length > 0) {
-        isAllowedDirection = true;
-        console.log(`[${VERSION}] Direction "${cityName}" → "${originMatch.name}" is in allowed_directions (reverse)`);
-      }
-    }
-  }
-  if (!isAllowedDirection) {
-    const { data: allowedAny } = await supabase
-      .from("allowed_directions").select("id, parent_city")
-      .eq("child_city", cityName).limit(1);
-    if (allowedAny && allowedAny.length > 0) {
-      isAllowedDirection = true;
-      console.log(`[${VERSION}] Destination "${cityName}" found as child in allowed_directions (parent="${allowedAny[0].parent_city}")`);
-    }
-  }
-
   for (const invoice of invoices) {
     try {
-      // 1. Check invoice status
-      const statusResp = await fetch(
-        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
-      );
-      if (statusResp.ok) {
-        const statusData = await statusResp.json();
-        console.log(`[${VERSION}] Invoice ${invoice} status response:`, JSON.stringify(statusData).substring(0, 500));
-        let statuses: any[] = [];
-        if (Array.isArray(statusData)) {
-          statuses = statusData;
-        } else if (statusData && typeof statusData === "object") {
-          if (Array.isArray(statusData.data?.status_history)) statuses = statusData.data.status_history;
-          else if (Array.isArray(statusData.data)) statuses = statusData.data;
-          else if (Array.isArray(statusData.statuses)) statuses = statusData.statuses;
-          else if (Array.isArray(statusData.status_history)) statuses = statusData.status_history;
-          else if (Array.isArray(statusData.result)) statuses = statusData.result;
-          else statuses = [statusData];
-        }
-        const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
-        if (inTransit && inTransit.state === "completed") {
-          if (isAllowedDirection) {
-            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" completed but direction is ALLOWED — proceeding`);
-            await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "status_check",
-              request_data: { invoice, allowed_direction: true },
-              response_data: { status: inTransit, allowed: true }, success: true,
-            });
-          } else {
-            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
-            await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "status_check",
-              request_data: { invoice }, response_data: { status: inTransit }, success: false,
-              error_message: "Груз уже в пути — смена направления невозможна",
-            });
-            results.push({ invoice, success: false, error: "Груз уже в пути — смена направления невозможна" });
-            continue;
-          }
-        }
-      }
-
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "status_check",
-        request_data: { invoice }, response_data: { passed: true }, success: true,
-      });
-
-      // 2. Get logistics info
+      // 1. Get logistics info FIRST to know current sender/receiver cities
       const item = await searchInvoice(sparkUrl, sparkToken, invoice);
       const logisticsInfo = await getLogisticsInfo(sparkUrl, sparkToken, item.id);
 
@@ -165,100 +90,155 @@ export async function executeChangeDirection(
 
       console.log(`[${VERSION}] ${invoice}: sender city="${senderCityName}" (${senderCityId}), receiver city="${receiverCityName}" (${receiverCityId})`);
 
+      // 2. Determine WHAT to change by comparing order data with request
       let changeSender = false;
       let changeReceiver = false;
       let senderTargetCityId = senderCityId;
       let senderTargetCityName = senderCityName;
-      let receiverTargetCityId = cityId;
-      let receiverTargetCityName = cityName;
+      let receiverTargetCityId = receiverCityId;
+      let receiverTargetCityName = receiverCityName;
 
       const normalize = normalizeCityName;
 
       if (originMatch) {
+        // Two cities provided (e.g. "Алматы - Костанай")
+        // Compare each city from request against actual order sender/receiver
         const normSenderCity = normalize(senderCityName);
         const normReceiverCity = normalize(receiverCityName);
         const normOrigin = normalize(originMatch.name);
         const normDest = normalize(cityName);
 
         const senderMatchesOrigin = normSenderCity === normOrigin || senderCityId === originMatch.id;
-        const receiverMatchesDest = normReceiverCity === normDest || receiverCityId === cityId;
         const senderMatchesDest = normSenderCity === normDest || senderCityId === cityId;
         const receiverMatchesOrigin = normReceiverCity === normOrigin || receiverCityId === originMatch.id;
+        const receiverMatchesDest = normReceiverCity === normDest || receiverCityId === cityId;
 
-        console.log(`[${VERSION}] Match analysis: sender="${senderCityName}"(${senderCityId}) receiver="${receiverCityName}"(${receiverCityId}) | origin="${originMatch.name}"(${originMatch.id}) dest="${cityName}"(${cityId})`);
-        console.log(`[${VERSION}] Normal: sender↔origin=${senderMatchesOrigin}, receiver↔dest=${receiverMatchesDest} | Swapped: sender↔dest=${senderMatchesDest}, receiver↔origin=${receiverMatchesOrigin}`);
+        console.log(`[${VERSION}] Match: sender="${senderCityName}" vs origin="${originMatch.name}"=${senderMatchesOrigin}, vs dest="${cityName}"=${senderMatchesDest}`);
+        console.log(`[${VERSION}] Match: receiver="${receiverCityName}" vs origin="${originMatch.name}"=${receiverMatchesOrigin}, vs dest="${cityName}"=${receiverMatchesDest}`);
 
-        // Check if the pair is already correct in normal order
+        // Rule: the city that MATCHES the current order = don't touch. The one that DOESN'T = change it.
         if (senderMatchesOrigin && receiverMatchesDest) {
+          // Already correct
           results.push({ invoice, success: true, city: cityName, message: "Направление уже соответствует" });
           continue;
         }
 
-        // Determine if AI parser swapped origin/destination
-        // Score normal assignment vs swapped assignment
-        const normalScore = (senderMatchesOrigin ? 1 : 0) + (receiverMatchesDest ? 1 : 0);
-        const swappedScore = (senderMatchesDest ? 1 : 0) + (receiverMatchesOrigin ? 1 : 0);
-
-        let effectiveOriginId = originMatch.id;
-        let effectiveOriginName = originMatch.name;
-        let effectiveDestId = cityId;
-        let effectiveDestName = cityName;
-
-        if (swappedScore > normalScore) {
-          // AI parser likely swapped origin and destination — correct it
-          console.log(`[${VERSION}] Detected swapped origin/destination (normal=${normalScore}, swapped=${swappedScore}). Correcting: origin="${cityName}", dest="${originMatch.name}"`);
-          effectiveOriginId = cityId;
-          effectiveOriginName = cityName;
-          effectiveDestId = originMatch.id;
-          effectiveDestName = originMatch.name;
-        }
-
-        const senderNeedsChange = !(normalize(senderCityName) === normalize(effectiveOriginName) || senderCityId === effectiveOriginId);
-        const receiverNeedsChange = !(normalize(receiverCityName) === normalize(effectiveDestName) || receiverCityId === effectiveDestId);
-
-        if (!senderNeedsChange && !receiverNeedsChange) {
-          results.push({ invoice, success: true, city: effectiveDestName, message: "Направление уже соответствует" });
-          continue;
-        }
-
-        if (senderNeedsChange) {
-          changeSender = true;
-          senderTargetCityId = effectiveOriginId;
-          senderTargetCityName = effectiveOriginName;
-        }
-        if (receiverNeedsChange) {
+        if (senderMatchesOrigin) {
+          // Sender matches origin → change RECEIVER to destination
           changeReceiver = true;
-          receiverTargetCityId = effectiveDestId;
-          receiverTargetCityName = effectiveDestName;
+          receiverTargetCityId = cityId;
+          receiverTargetCityName = cityName;
+        } else if (senderMatchesDest) {
+          // Sender matches dest → AI swapped. Change RECEIVER to origin
+          changeReceiver = true;
+          receiverTargetCityId = originMatch.id;
+          receiverTargetCityName = originMatch.name;
+        } else if (receiverMatchesDest) {
+          // Receiver matches dest → change SENDER to origin
+          changeSender = true;
+          senderTargetCityId = originMatch.id;
+          senderTargetCityName = originMatch.name;
+        } else if (receiverMatchesOrigin) {
+          // Receiver matches origin → change SENDER to dest
+          changeSender = true;
+          senderTargetCityId = cityId;
+          senderTargetCityName = cityName;
+        } else {
+          // Neither side matches either city — ambiguous, default to changing receiver to dest
+          console.warn(`[${VERSION}] No city match found — defaulting to change receiver to "${cityName}"`);
+          changeReceiver = true;
+          receiverTargetCityId = cityId;
+          receiverTargetCityName = cityName;
         }
-
-        await supabase.from("execution_logs").insert({
-          task_id: taskId, action: "change_direction", step: "direction_analysis",
-          request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, parsed_origin: originMatch.name, parsed_destination: cityName, effective_origin: effectiveOriginName, effective_destination: effectiveDestName, swapped: swappedScore > normalScore },
-          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName },
-          success: true,
-        });
       } else {
-        // Only destination city provided, no origin — smart detection
+        // Only one city provided — smart detection
         const normReceiverCity = normalize(receiverCityName);
         const normSenderCity = normalize(senderCityName);
         const normDest = normalize(cityName);
 
         if (normReceiverCity === normDest || receiverCityId === cityId) {
-          // Receiver already matches — maybe sender needs changing? Skip, ambiguous without origin.
-          console.log(`[${VERSION}] Receiver already in "${cityName}" — no change needed (no origin specified)`);
+          console.log(`[${VERSION}] Receiver already in "${cityName}" — no change needed`);
           results.push({ invoice, success: true, city: cityName, message: "Получатель уже в указанном городе" });
           continue;
         } else if (normSenderCity === normDest || senderCityId === cityId) {
-          // Sender matches the "destination" — likely it's the receiver that needs changing
-          console.log(`[${VERSION}] Sender is in "${cityName}", changing receiver to "${cityName}"`);
-          changeReceiver = true;
+          // Sender matches the target city — that means we should NOT touch sender, this is ambiguous
+          console.log(`[${VERSION}] Sender is already "${cityName}" — ignoring, ambiguous single-city request`);
+          results.push({ invoice, success: false, error: `Отправитель уже в городе "${cityName}", непонятно что менять. Укажите маршрут полностью.` });
+          continue;
         } else {
           // Neither matches — default to changing receiver
           changeReceiver = true;
+          receiverTargetCityId = cityId;
+          receiverTargetCityName = cityName;
         }
       }
 
+      // Determine the effective route for allowed_directions check
+      const effectiveSenderCity = changeSender ? senderTargetCityName : senderCityName;
+      const effectiveReceiverCity = changeReceiver ? receiverTargetCityName : receiverCityName;
+
+      // Check allowed_directions for the target route
+      let isAllowedDirection = false;
+      {
+        const { data: ad1 } = await supabase
+          .from("allowed_directions").select("id")
+          .eq("parent_city", effectiveSenderCity).eq("child_city", effectiveReceiverCity).limit(1);
+        if (ad1 && ad1.length > 0) isAllowedDirection = true;
+        if (!isAllowedDirection) {
+          const { data: ad2 } = await supabase
+            .from("allowed_directions").select("id")
+            .eq("parent_city", effectiveReceiverCity).eq("child_city", effectiveSenderCity).limit(1);
+          if (ad2 && ad2.length > 0) isAllowedDirection = true;
+        }
+        if (!isAllowedDirection) {
+          const { data: adAny } = await supabase
+            .from("allowed_directions").select("id, parent_city")
+            .eq("child_city", effectiveReceiverCity).limit(1);
+          if (adAny && adAny.length > 0) isAllowedDirection = true;
+        }
+      }
+
+      await supabase.from("execution_logs").insert({
+        task_id: taskId, action: "change_direction", step: "direction_analysis",
+        request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, parsed_origin: originMatch?.name || null, parsed_destination: cityName },
+        response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, is_allowed: isAllowedDirection },
+        success: true,
+      });
+
+      // 3. Check "В пути" status
+      const statusResp = await fetch(
+        `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+      );
+      if (statusResp.ok) {
+        const statusData = await statusResp.json();
+        let statuses: any[] = [];
+        if (Array.isArray(statusData)) statuses = statusData;
+        else if (statusData && typeof statusData === "object") {
+          if (Array.isArray(statusData.data?.status_history)) statuses = statusData.data.status_history;
+          else if (Array.isArray(statusData.data)) statuses = statusData.data;
+          else if (Array.isArray(statusData.statuses)) statuses = statusData.statuses;
+          else if (Array.isArray(statusData.status_history)) statuses = statusData.status_history;
+          else if (Array.isArray(statusData.result)) statuses = statusData.result;
+          else statuses = [statusData];
+        }
+        const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
+        if (inTransit && inTransit.state === "completed") {
+          if (isAllowedDirection) {
+            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" completed but direction "${effectiveSenderCity}→${effectiveReceiverCity}" is ALLOWED — proceeding`);
+          } else {
+            // IGNORE — don't change, don't error, just skip silently
+            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" completed and direction NOT in allowed_directions — IGNORING`);
+            await supabase.from("execution_logs").insert({
+              task_id: taskId, action: "change_direction", step: "status_check",
+              request_data: { invoice, direction: `${effectiveSenderCity}→${effectiveReceiverCity}`, allowed: false },
+              response_data: { status: inTransit }, success: false,
+              error_message: "Груз в пути (завершён), направление не в разрешённых — пропускаем",
+            });
+            results.push({ invoice, success: false, error: "Груз в пути (завершён), направление не в разрешённых — смена невозможна" });
+            continue;
+          }
+        }
+      }
       // ---- CHANGE RECEIVER if needed ----
       if (changeReceiver) {
         let currentStreet = stripCityFromAddress(receiver.street || "", allCities);
