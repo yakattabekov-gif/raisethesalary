@@ -88,6 +88,19 @@ async function callComparator(
 - НЕ ВЫДУМЫВАЙ значения типа "remove_cod" — используй ТОЛЬКО числа (1,2,3,4) или null!
 - Если парсер вернул cod_payment=0 и остальное null — это ПРАВИЛЬНО для "убрать НП". ОДОБРЯЙ!
 
+КРИТИЧЕСКИ ВАЖНО — ФОРМАТ corrected_actions:
+Когда возвращаешь corrected_actions, используй СТРОГО эти имена полей:
+- "invoices" (НЕ "waybill_numbers", НЕ "invoice_numbers") — массив номеров накладных
+- "city" (НЕ "new_direction", НЕ "destination") — город назначения для change_direction
+- "action" — тип действия (cancel, change_direction, update_receiver, update_payment и т.д.)
+- "payment" — объект оплаты с полями payment_type, payment_method, cash_sum, cod_payment
+- "address" — объект адреса с полями city, street, house, apartment, full_address
+- "receiver" — объект получателя с полями full_name, phone, additional_phone, entity
+- "sender" — объект отправителя с полями full_name, phone, entity
+
+Пример corrected_actions для смены направления:
+[{"action": "change_direction", "invoices": ["AR99986902", "AR99986888"], "city": "Калбатау"}]
+
 Формат ответа — СТРОГО JSON:
 {
   "approved": true/false,
