@@ -88,19 +88,6 @@ async function callComparator(
 - НЕ ВЫДУМЫВАЙ значения типа "remove_cod" — используй ТОЛЬКО числа (1,2,3,4) или null!
 - Если парсер вернул cod_payment=0 и остальное null — это ПРАВИЛЬНО для "убрать НП". ОДОБРЯЙ!
 
-КРИТИЧЕСКИ ВАЖНО — ФОРМАТ corrected_actions:
-Когда возвращаешь corrected_actions, используй СТРОГО эти имена полей:
-- "invoices" (НЕ "waybill_numbers", НЕ "invoice_numbers") — массив номеров накладных
-- "city" (НЕ "new_direction", НЕ "destination") — город назначения для change_direction
-- "action" — тип действия (cancel, change_direction, update_receiver, update_payment и т.д.)
-- "payment" — объект оплаты с полями payment_type, payment_method, cash_sum, cod_payment
-- "address" — объект адреса с полями city, street, house, apartment, full_address
-- "receiver" — объект получателя с полями full_name, phone, additional_phone, entity
-- "sender" — объект отправителя с полями full_name, phone, entity
-
-Пример corrected_actions для смены направления:
-[{"action": "change_direction", "invoices": ["AR99986902", "AR99986888"], "city": "Калбатау"}]
-
 Формат ответа — СТРОГО JSON:
 {
   "approved": true/false,
@@ -262,29 +249,7 @@ export async function parseWithAI(
     finalResult = parserResult;
   } else if (comparatorResult.corrected_actions) {
     console.log(`[${VERSION}] Stage 3: CORRECTED — ${comparatorResult.reason}`);
-    const correctedActions = Array.isArray(comparatorResult.corrected_actions)
-      ? comparatorResult.corrected_actions
-      : [comparatorResult.corrected_actions];
-    // Normalize field names that the comparator might use incorrectly
-    for (const action of correctedActions) {
-      // Fix "waybill_numbers" / "invoice_numbers" → "invoices"
-      if (!action.invoices && (action.waybill_numbers || action.invoice_numbers)) {
-        action.invoices = action.waybill_numbers || action.invoice_numbers;
-        delete action.waybill_numbers;
-        delete action.invoice_numbers;
-        console.log(`[${VERSION}] Normalized field: waybill_numbers/invoice_numbers → invoices`);
-      }
-      // Fix "new_direction" / "destination" / "target_city" → "city"
-      if (!action.city && (action.new_direction || action.destination || action.target_city)) {
-        action.city = action.new_direction || action.destination || action.target_city;
-        delete action.new_direction;
-        delete action.destination;
-        delete action.target_city;
-        delete action.old_direction;
-        console.log(`[${VERSION}] Normalized field: new_direction/destination → city`);
-      }
-    }
-    finalResult = { actions: correctedActions };
+    finalResult = { actions: comparatorResult.corrected_actions };
   } else {
     console.log(`[${VERSION}] Stage 3: REJECTED — ${comparatorResult.reason}`);
     finalResult = { actions: [], rejected: true, reject_reason: comparatorResult.reason };
@@ -459,7 +424,6 @@ function getBuiltInPrompt(): string {
 }
 
 
-Пример СМЕНА НАПРАВЛЕНИЯ (один город):
 {
   "actions": [
     {
@@ -470,21 +434,8 @@ function getBuiltInPrompt(): string {
   ]
 }
 
-Пример СМЕНА НАПРАВЛЕНИЯ (несколько AR-накладных):
-Текст: "надо сменить направление по накладным с Семей на Калбатау AR99986902 AR99986888 AR99986868"
-{
-  "actions": [
-    {
-      "action": "change_direction",
-      "invoices": ["AR99986902", "AR99986888", "AR99986868"],
-      "city": "Калбатау"
-    }
-  ]
-}
-
 Правила для change_direction:
 - city: название города назначения. Указывай ТОЧНО как в тексте заявки.
-- Накладные могут иметь префикс AR (например AR99986902) — это ВАЛИДНЫЕ номера!
 
 Пример СМЕНА ТИПА ПЕРЕВОЗКИ:
 {
