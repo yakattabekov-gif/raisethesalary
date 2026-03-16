@@ -235,7 +235,7 @@ serve(async (req) => {
         if (existing?.status === "waiting_for_info") {
           console.log(`[${VERSION}] Task ${issueKey} is waiting_for_info — checking comments`);
           const commentsText = await fetchJiraComments(settings, jiraAuth, issueKey);
-          const invoicePattern = /(?:KXT|SP|SLQ|kxt|sp|slq)\d{6,12}/gi;
+          const invoicePattern = /(?:(?:KXT|SP|SLQ|kxt|sp|slq)\d{6,12}|\b\d{12,15}\b)/gi;
           const commentInvoices = commentsText.match(invoicePattern);
           if (commentInvoices && commentInvoices.length > 0) {
             combinedDescription = `${description}\n\nИз комментариев: номера накладных: ${commentInvoices.join(", ")}`;
