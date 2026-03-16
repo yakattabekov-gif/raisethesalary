@@ -262,7 +262,29 @@ export async function parseWithAI(
     finalResult = parserResult;
   } else if (comparatorResult.corrected_actions) {
     console.log(`[${VERSION}] Stage 3: CORRECTED — ${comparatorResult.reason}`);
-    finalResult = { actions: comparatorResult.corrected_actions };
+    const correctedActions = Array.isArray(comparatorResult.corrected_actions)
+      ? comparatorResult.corrected_actions
+      : [comparatorResult.corrected_actions];
+    // Normalize field names that the comparator might use incorrectly
+    for (const action of correctedActions) {
+      // Fix "waybill_numbers" / "invoice_numbers" → "invoices"
+      if (!action.invoices && (action.waybill_numbers || action.invoice_numbers)) {
+        action.invoices = action.waybill_numbers || action.invoice_numbers;
+        delete action.waybill_numbers;
+        delete action.invoice_numbers;
+        console.log(`[${VERSION}] Normalized field: waybill_numbers/invoice_numbers → invoices`);
+      }
+      // Fix "new_direction" / "destination" / "target_city" → "city"
+      if (!action.city && (action.new_direction || action.destination || action.target_city)) {
+        action.city = action.new_direction || action.destination || action.target_city;
+        delete action.new_direction;
+        delete action.destination;
+        delete action.target_city;
+        delete action.old_direction;
+        console.log(`[${VERSION}] Normalized field: new_direction/destination → city`);
+      }
+    }
+    finalResult = { actions: correctedActions };
   } else {
     console.log(`[${VERSION}] Stage 3: REJECTED — ${comparatorResult.reason}`);
     finalResult = { actions: [], rejected: true, reject_reason: comparatorResult.reason };
