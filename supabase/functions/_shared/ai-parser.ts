@@ -138,7 +138,61 @@ function parseAIContent(aiContent: string): any {
       aiResult = { actions: [parsed] };
     }
   }
+  // Normalize each action to fix common AI mistakes
+  normalizeActions(aiResult);
   return aiResult;
+}
+
+// ---- Normalize actions: fix common AI field naming mistakes ----
+function normalizeActions(aiResult: any) {
+  if (!aiResult.actions || !Array.isArray(aiResult.actions)) return;
+  for (const action of aiResult.actions) {
+    // Fix invoice_number / invoice → invoices[]
+    if (!action.invoices || (Array.isArray(action.invoices) && action.invoices.length === 0)) {
+      if (action.invoice_number) {
+        action.invoices = Array.isArray(action.invoice_number) ? action.invoice_number : [action.invoice_number];
+        delete action.invoice_number;
+      } else if (action.invoice) {
+        action.invoices = Array.isArray(action.invoice) ? action.invoice : [action.invoice];
+        delete action.invoice;
+      }
+    }
+
+    // Fix update_payment: amount/sum/cash_sum at top level → payment object
+    if (action.action === "update_payment") {
+      if (!action.payment) action.payment = {};
+      // Move top-level amount/sum into payment.cash_sum
+      if (action.amount !== undefined && action.amount !== null) {
+        if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) {
+          action.payment.cash_sum = Number(action.amount);
+        }
+        delete action.amount;
+      }
+      if (action.sum !== undefined && action.sum !== null) {
+        if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) {
+          action.payment.cash_sum = Number(action.sum);
+        }
+        delete action.sum;
+      }
+      // Move top-level payment_type/payment_method into payment
+      if (action.payment_type !== undefined) {
+        if (action.payment.payment_type === undefined) action.payment.payment_type = action.payment_type;
+        delete action.payment_type;
+      }
+      if (action.payment_method !== undefined) {
+        if (action.payment.payment_method === undefined) action.payment.payment_method = action.payment_method;
+        delete action.payment_method;
+      }
+      if (action.cash_sum !== undefined) {
+        if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) action.payment.cash_sum = Number(action.cash_sum);
+        delete action.cash_sum;
+      }
+      if (action.cod_payment !== undefined) {
+        if (action.payment.cod_payment === undefined) action.payment.cod_payment = action.cod_payment;
+        delete action.cod_payment;
+      }
+    }
+  }
 }
 
 // ---- Phone validation (unchanged logic) ----
