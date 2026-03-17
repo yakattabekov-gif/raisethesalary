@@ -463,6 +463,22 @@ function getBuiltInPrompt(): string {
   ]
 }
 
+Пример ВЫСТАВИТЬ СЧЁТ НА ОПЛАТУ (= внести сумму):
+Текст: "SP00509038 прошу выставить счет на оплату 3642.4 тг"
+{
+  "actions": [
+    {"action": "update_payment", "invoices": ["SP00509038"], "payment": {"payment_type": null, "payment_method": null, "cash_sum": 3642.4}}
+  ]
+}
+
+Пример ВНЕСТИ СУММУ НА КАСПИЙ (одна накладная):
+Текст: "SP00508472 - Стоимость итого: 42025 тг" (тема: "внести сумму на каспи")
+{
+  "actions": [
+    {"action": "update_payment", "invoices": ["SP00508472"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 42025}}
+  ]
+}
+
 Пример УБРАТЬ НАЛОЖНЫЙ ПЛАТЕЖ (НП):
 Текст: "KXT110098207 убрать НП"
 {
