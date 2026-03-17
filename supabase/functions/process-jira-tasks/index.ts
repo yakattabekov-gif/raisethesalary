@@ -333,7 +333,7 @@ serve(async (req) => {
     // === Retry pending tasks from DB ===
     const { data: pendingRetries } = await supabase
       .from("processed_tasks").select("*")
-      .eq("status", "pending").not("ai_response", "is", null).limit(10);
+      .eq("status", "pending").limit(10);
 
     if (pendingRetries && pendingRetries.length > 0) {
       console.log(`[${VERSION}] Found ${pendingRetries.length} pending retry tasks`);
@@ -345,7 +345,16 @@ serve(async (req) => {
             .update({ status: "processing", retry_count: task.retry_count + 1 })
             .eq("id", taskId);
 
-          const aiResult = task.ai_response as any;
+          let aiResult = task.ai_response as any;
+          if (aiEnabled) {
+            console.log(`[${VERSION}] Re-parsing pending task ${issueKey} instead of reusing stale ai_response`);
+            aiResult = await parseWithAI(settings, task.jira_summary || "", task.jira_description || "", supabase, taskId);
+            const primaryAction = aiResult.actions?.[0]?.action || null;
+            await supabase.from("processed_tasks")
+              .update({ ai_response: aiResult, action: primaryAction })
+              .eq("id", taskId);
+          }
+
           if (!aiResult?.actions || aiResult.actions.length === 0) {
             await supabase.from("processed_tasks")
               .update({ status: "ignored", execution_result: { message: "Нет действий для повтора" } })

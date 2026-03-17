@@ -147,7 +147,21 @@ function parseAIContent(aiContent: string): any {
 function normalizeActions(aiResult: any) {
   if (!aiResult.actions || !Array.isArray(aiResult.actions)) return;
   for (const action of aiResult.actions) {
-    // Fix invoice_number / invoice → invoices[]
+    // Normalize unsupported alias from reviewer/comparator
+    if (action.action === "add_receiver_phone") {
+      action.action = "update_receiver";
+      if (!action.receiver) action.receiver = {};
+      if (action.phone && !action.receiver.additional_phone) {
+        action.receiver.additional_phone = normalizePhone(String(action.phone));
+      }
+      if (!action.invoices || action.invoices.length === 0) {
+        if (action.waybill) action.invoices = [String(action.waybill)];
+      }
+      delete action.phone;
+      delete action.waybill;
+    }
+
+    // Fix invoice_number / invoice / waybill → invoices[]
     if (!action.invoices || (Array.isArray(action.invoices) && action.invoices.length === 0)) {
       if (action.invoice_number) {
         action.invoices = Array.isArray(action.invoice_number) ? action.invoice_number : [action.invoice_number];
@@ -155,13 +169,15 @@ function normalizeActions(aiResult: any) {
       } else if (action.invoice) {
         action.invoices = Array.isArray(action.invoice) ? action.invoice : [action.invoice];
         delete action.invoice;
+      } else if (action.waybill) {
+        action.invoices = Array.isArray(action.waybill) ? action.waybill : [action.waybill];
+        delete action.waybill;
       }
     }
 
     // Fix update_payment: amount/sum/cash_sum at top level → payment object
     if (action.action === "update_payment") {
       if (!action.payment) action.payment = {};
-      // Move top-level amount/sum into payment.cash_sum
       if (action.amount !== undefined && action.amount !== null) {
         if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) {
           action.payment.cash_sum = Number(action.amount);
@@ -174,7 +190,6 @@ function normalizeActions(aiResult: any) {
         }
         delete action.sum;
       }
-      // Move top-level payment_type/payment_method into payment
       if (action.payment_type !== undefined) {
         if (action.payment.payment_type === undefined) action.payment.payment_type = action.payment_type;
         delete action.payment_type;
