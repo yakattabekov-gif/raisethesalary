@@ -314,6 +314,48 @@ export async function parseWithAI(
   // Phone validation on final result
   validatePhones(finalResult, summary, description);
 
+  // Fallback: extract invoices from original text if AI forgot them
+  if (finalResult.actions) {
+    const fullText = `${summary} ${description}`;
+    const invoicePattern = /(?:(?:KXT|SP|SLQ|AR|kxt|sp|slq|ar)\d{6,12}|\b\d{12,15}\b)/gi;
+    const textInvoices = fullText.match(invoicePattern) || [];
+
+    for (const action of finalResult.actions) {
+      if (action.action === "change_act_number") continue; // no invoices needed
+      if (!action.invoices || action.invoices.length === 0) {
+        if (textInvoices.length > 0) {
+          console.log(`[${VERSION}] Post-process: AI missed invoices, extracting from text: ${textInvoices.join(", ")}`);
+          action.invoices = [...textInvoices];
+        }
+      }
+
+      // Fallback: extract cash_sum from text if AI missed it for update_payment
+      if (action.action === "update_payment" && action.payment) {
+        if (action.payment.cash_sum === null || action.payment.cash_sum === undefined) {
+          const sumMatch = fullText.match(/(\d+[\.,]?\d*)\s*(?:тг|тенге|₸)/i);
+          if (sumMatch) {
+            const extractedSum = Number(sumMatch[1].replace(",", "."));
+            if (extractedSum > 0) {
+              console.log(`[${VERSION}] Post-process: AI missed cash_sum, extracted from text: ${extractedSum}`);
+              action.payment.cash_sum = extractedSum;
+            }
+          }
+        }
+        // Fallback: detect payment_method from summary/description
+        if (action.payment.payment_method === null || action.payment.payment_method === undefined) {
+          const lowerText = fullText.toLowerCase();
+          if (lowerText.includes("каспи") || lowerText.includes("kaspi")) {
+            action.payment.payment_method = 2;
+            console.log(`[${VERSION}] Post-process: detected Kaspi payment method from text`);
+          } else if (lowerText.includes("наличк") || lowerText.includes("наличн")) {
+            action.payment.payment_method = 4;
+            console.log(`[${VERSION}] Post-process: detected cash payment method from text`);
+          }
+        }
+      }
+    }
+  }
+
   // Strip "Казахстан" from city fields — it's a country, not a city
   if (finalResult.actions) {
     for (const action of finalResult.actions) {
@@ -325,7 +367,6 @@ export async function parseWithAI(
         console.log(`[${VERSION}] Post-process: stripped "Казахстан" from action.city`);
         action.city = null;
       }
-      // Also strip from full_address prefix
       if (action.address?.full_address) {
         action.address.full_address = action.address.full_address.replace(/^Казахстан,?\s*/i, "");
       }
