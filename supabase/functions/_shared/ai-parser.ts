@@ -304,6 +304,8 @@ export async function parseWithAI(
   } else if (comparatorResult.corrected_actions) {
     console.log(`[${VERSION}] Stage 3: CORRECTED — ${comparatorResult.reason}`);
     finalResult = { actions: comparatorResult.corrected_actions };
+    // Normalize corrected actions (comparator often uses wrong field names)
+    normalizeActions(finalResult);
   } else {
     console.log(`[${VERSION}] Stage 3: REJECTED — ${comparatorResult.reason}`);
     finalResult = { actions: [], rejected: true, reject_reason: comparatorResult.reason };
