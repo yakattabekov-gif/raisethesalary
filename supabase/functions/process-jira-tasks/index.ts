@@ -39,28 +39,44 @@ async function dispatchAction(
 
   } else if (actionItem.action === "update_receiver") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Обновление получателя пропущено — заказ будет отменён`); return { results, commentLines }; }
+    if (filtered.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для обновления получателя" });
+      commentLines.push(`❌ Обновление получателя не выполнено — не найдена накладная`);
+      return { results, commentLines };
+    }
     const r = await executeUpdateReceiver(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "update_payment") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена оплаты пропущена — заказ будет отменён`); return { results, commentLines }; }
+    if (filtered.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены оплаты" });
+      commentLines.push(`❌ Смена оплаты не выполнена — не найдена накладная`);
+      return { results, commentLines };
+    }
     const r = await executeUpdatePayment(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_direction") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена направления пропущена — заказ будет отменён`); return { results, commentLines }; }
+    if (filtered.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены направления" });
+      commentLines.push(`❌ Смена направления не выполнена — не найдена накладная`);
+      return { results, commentLines };
+    }
     const r = await executeChangeDirection(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление изменено${r.changed ? ` (${r.changed})` : ` на ${r.city || actionItem.city}`}` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_shipment_type") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена типа перевозки пропущена — заказ будет отменён`); return { results, commentLines }; }
+    if (filtered.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены типа перевозки" });
+      commentLines.push(`❌ Смена типа перевозки не выполнена — не найдена накладная`);
+      return { results, commentLines };
+    }
     const r = await executeChangeShipmentType(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     const typeLabel = actionItem.shipment_type === 2 ? "Авиа (Экспресс)" : "Авто (Стандарт)";
@@ -68,14 +84,22 @@ async function dispatchAction(
 
   } else if (actionItem.action === "update_sender") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Обновление отправителя пропущено — заказ будет отменён`); return { results, commentLines }; }
+    if (filtered.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для обновления отправителя" });
+      commentLines.push(`❌ Обновление отправителя не выполнено — не найдена накладная`);
+      return { results, commentLines };
+    }
     const r = await executeUpdateSender(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: данные отправителя обновлены` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_sender_direction") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена направления отправителя пропущена — заказ будет отменён`); return { results, commentLines }; }
+    if (filtered.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены направления отправителя" });
+      commentLines.push(`❌ Смена направления отправителя не выполнена — не найдена накладная`);
+      return { results, commentLines };
+    }
     const r = await executeChangeSenderDirection(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление отправителя изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`));
@@ -84,6 +108,10 @@ async function dispatchAction(
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
+
+  } else {
+    results.push({ success: false, action: actionItem.action, error: `Неподдерживаемое действие: ${actionItem.action}` });
+    commentLines.push(`❌ Неподдерживаемое действие: ${actionItem.action}`);
   }
 
   return { results, commentLines };
