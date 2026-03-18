@@ -28,12 +28,24 @@ async function dispatchAction(
     invoices.filter((inv: string) => !cancelledInvoices.has(inv));
 
   if (actionItem.action === "cancel") {
-    const r = await executeCancelOrders(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+    const invoices = actionItem.invoices || [];
+    if (invoices.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для отмены" });
+      commentLines.push(`❌ Отмена не выполнена — не найдена накладная`);
+      return { results, commentLines };
+    }
+    const r = await executeCancelOrders(supabase, settings, invoices, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "restore_order") {
-    const r = await executeRestoreOrder(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+    const invoices = actionItem.invoices || [];
+    if (invoices.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для восстановления" });
+      commentLines.push(`❌ Восстановление не выполнено — не найдена накладная`);
+      return { results, commentLines };
+    }
+    const r = await executeRestoreOrder(supabase, settings, invoices, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: заказ восстановлен` : `❌ ${r.invoice}: ${r.error}`));
 
