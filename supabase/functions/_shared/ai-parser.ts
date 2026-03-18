@@ -381,6 +381,43 @@ export async function parseWithAI(
           }
         }
       }
+
+      // Fallback: if update_receiver has no address but description mentions address change
+      if (action.action === "update_receiver" && !action.address) {
+        const lowerText = fullTextForPhones.toLowerCase();
+        if (lowerText.includes("смена адреса") || lowerText.includes("сменить адрес") || 
+            lowerText.includes("изменить адрес") || lowerText.includes("новый адрес") ||
+            lowerText.includes("адрес получателя")) {
+          // Try to extract address from description after "на" keyword
+          const addrMatch = fullTextForPhones.match(/(?:адрес[а-я]*\s+(?:получателя\s+)?(?:на\s+)?|на\s+)([А-ЯЁа-яё][А-ЯЁа-яё\s\d\.,\/\-]+?)(?:\s*$|\s*\n)/i);
+          if (addrMatch) {
+            const rawAddr = addrMatch[1].trim();
+            // Parse street and house from address
+            const streetHouseMatch = rawAddr.match(/^(.+?)\s+(\d+\S*)\s*(.*)?$/);
+            if (streetHouseMatch) {
+              action.address = {
+                street: streetHouseMatch[1].trim(),
+                house: streetHouseMatch[2].trim(),
+              };
+              // Check for корпус/кв/flat
+              const rest = streetHouseMatch[3] || "";
+              const korpusMatch = rest.match(/корпус\s*(\d+)/i);
+              const kvMatch = rest.match(/кв(?:артира)?\s*\.?\s*(\d+)/i);
+              if (korpusMatch) {
+                action.address.house = `${action.address.house} корпус ${korpusMatch[1]}`;
+              }
+              if (kvMatch) {
+                action.address.flat = kvMatch[1];
+              }
+              console.log(`[${VERSION}] Post-process: AI missed address, extracted from text: street="${action.address.street}", house="${action.address.house}"`);
+            } else {
+              // Can't parse structured — use raw as full_address
+              action.address = { street: rawAddr, house: "" };
+              console.log(`[${VERSION}] Post-process: AI missed address, extracted raw: "${rawAddr}"`);
+            }
+          }
+        }
+      }
     }
   }
 
