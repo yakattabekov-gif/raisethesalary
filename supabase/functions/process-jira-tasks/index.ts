@@ -28,12 +28,24 @@ async function dispatchAction(
     invoices.filter((inv: string) => !cancelledInvoices.has(inv));
 
   if (actionItem.action === "cancel") {
-    const r = await executeCancelOrders(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+    const invoices = actionItem.invoices || [];
+    if (invoices.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для отмены" });
+      commentLines.push(`❌ Отмена не выполнена — не найдена накладная`);
+      return { results, commentLines };
+    }
+    const r = await executeCancelOrders(supabase, settings, invoices, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "restore_order") {
-    const r = await executeRestoreOrder(supabase, settings, actionItem.invoices || [], taskId, dryRun);
+    const invoices = actionItem.invoices || [];
+    if (invoices.length === 0) {
+      results.push({ success: false, action: actionItem.action, error: "Нет накладной для восстановления" });
+      commentLines.push(`❌ Восстановление не выполнено — не найдена накладная`);
+      return { results, commentLines };
+    }
+    const r = await executeRestoreOrder(supabase, settings, invoices, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: заказ восстановлен` : `❌ ${r.invoice}: ${r.error}`));
 
@@ -105,6 +117,12 @@ async function dispatchAction(
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление отправителя изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_act_number") {
+    const ftlIds = actionItem.ftl_order_ids || [];
+    if (ftlIds.length === 0 && !actionItem.act_number) {
+      results.push({ success: false, action: actionItem.action, error: "Нет данных для смены АВР (отсутствуют ftl_order_ids или act_number)" });
+      commentLines.push(`❌ Смена АВР не выполнена — не найдены необходимые данные`);
+      return { results, commentLines };
+    }
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
@@ -301,8 +319,13 @@ serve(async (req) => {
 
         const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
-        await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
+        // Guard against vacuous truth: empty results = no real work done
+        const hasAnyResults = allResults.length > 0;
+        const finalStatus = hasAnyResults ? (allSuccess ? "completed" : (anySuccess ? "completed" : "error")) : "error";
+        if (!hasAnyResults) {
+          console.error(`[${VERSION}] Task ${issueKey}: no results returned despite having actions — marking as error`);
+        }
+        await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults.length > 0 ? allResults : { error: "Нет результатов выполнения" } }).eq("id", taskId);
 
         if (anySuccess && allCommentLines.length > 0) {
           await addJiraComment(settings, jiraAuth, issueKey,
@@ -365,8 +388,13 @@ serve(async (req) => {
 
           const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
-          await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
+          // Guard against vacuous truth: empty results = no real work done
+          const hasAnyResults = allResults.length > 0;
+          const finalStatus = hasAnyResults ? (allSuccess ? "completed" : (anySuccess ? "completed" : "error")) : "error";
+          if (!hasAnyResults) {
+            console.error(`[${VERSION}] Retry task ${issueKey}: no results returned despite having actions — marking as error`);
+          }
+          await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults.length > 0 ? allResults : { error: "Нет результатов выполнения" } }).eq("id", taskId);
 
           if (!dryRun && allCommentLines.length > 0) {
             try {
