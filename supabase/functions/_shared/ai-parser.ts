@@ -346,6 +346,44 @@ export async function parseWithAI(
   // Phone validation on final result
   validatePhones(finalResult, summary, description);
 
+  // Fallback: if update_receiver action has no receiver.phone but text has phones, populate it
+  if (finalResult.actions) {
+    const fullTextForPhones = `${summary} ${description}`;
+    const phoneRegex = /(?:\+?\s*[78])[\s\-]*(?:\d[\s\-]*){10}/g;
+    const rawPhoneMatches = fullTextForPhones.match(phoneRegex);
+    const textPhones = rawPhoneMatches
+      ? rawPhoneMatches.map((m: string) => normalizePhone(m.replace(/[\s\-()]/g, "")))
+      : [];
+    
+    for (const action of finalResult.actions) {
+      if (action.action === "update_receiver" && textPhones.length > 0) {
+        if (!action.receiver) action.receiver = {};
+        // If receiver has no phone set but there are phones in text — this is likely a phone change request
+        if (!action.receiver.phone && !action.receiver.additional_phone) {
+          const lowerText = fullTextForPhones.toLowerCase();
+          if (lowerText.includes("смена номера") || lowerText.includes("сменить номер") || 
+              lowerText.includes("изменить номер") || lowerText.includes("новый номер") ||
+              lowerText.includes("доп номер") || lowerText.includes("доп.номер") ||
+              lowerText.includes("дополнительный номер") || lowerText.includes("добавить номер")) {
+            action.receiver.phone = textPhones[0];
+            if (textPhones.length > 1) {
+              action.receiver.additional_phone = textPhones[1];
+            }
+            console.log(`[${VERSION}] Post-process: AI missed receiver phone, populated from text: ${textPhones[0]}`);
+          }
+        }
+        // If receiver has no full_name but description mentions a name after the phone
+        if (!action.receiver.full_name) {
+          const nameMatch = fullTextForPhones.match(/(?:\+?[78]\d{10})\s+([А-ЯЁа-яё]{2,}(?:\s+[А-ЯЁа-яё]{2,})*)/);
+          if (nameMatch) {
+            action.receiver.full_name = nameMatch[1].trim();
+            console.log(`[${VERSION}] Post-process: Extracted receiver name from text: ${action.receiver.full_name}`);
+          }
+        }
+      }
+    }
+  }
+
   // Fallback: extract invoices from original text if AI forgot them
   if (finalResult.actions) {
     const fullText = `${summary} ${description}`;
