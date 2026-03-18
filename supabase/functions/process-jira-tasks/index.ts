@@ -117,6 +117,12 @@ async function dispatchAction(
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление отправителя изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_act_number") {
+    const ftlIds = actionItem.ftl_order_ids || [];
+    if (ftlIds.length === 0 && !actionItem.act_number) {
+      results.push({ success: false, action: actionItem.action, error: "Нет данных для смены АВР (отсутствуют ftl_order_ids или act_number)" });
+      commentLines.push(`❌ Смена АВР не выполнена — не найдены необходимые данные`);
+      return { results, commentLines };
+    }
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
