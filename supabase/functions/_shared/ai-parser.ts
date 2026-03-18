@@ -151,8 +151,25 @@ function normalizeActions(aiResult: any) {
     if (action.action === "add_receiver_phone") {
       action.action = "update_receiver";
       if (!action.receiver) action.receiver = {};
-      if (action.phone && !action.receiver.additional_phone) {
-        action.receiver.additional_phone = normalizePhone(String(action.phone));
+      if (action.phone) {
+        const normalized = normalizePhone(String(action.phone));
+        // Primary: set as receiver phone (this is "смена номера получателя")
+        if (!action.receiver.phone) {
+          action.receiver.phone = normalized;
+        }
+        // Also set as additional_phone if not already set
+        if (!action.receiver.additional_phone) {
+          action.receiver.additional_phone = normalized;
+        }
+      }
+      // Map full_name / name if present at top level
+      if (action.name && !action.receiver.full_name) {
+        action.receiver.full_name = action.name;
+        delete action.name;
+      }
+      if (action.full_name && !action.receiver.full_name) {
+        action.receiver.full_name = action.full_name;
+        delete action.full_name;
       }
       if (!action.invoices || action.invoices.length === 0) {
         if (action.waybill) action.invoices = [String(action.waybill)];
