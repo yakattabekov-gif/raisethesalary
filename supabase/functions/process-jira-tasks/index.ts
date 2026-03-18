@@ -28,67 +28,39 @@ async function dispatchAction(
     invoices.filter((inv: string) => !cancelledInvoices.has(inv));
 
   if (actionItem.action === "cancel") {
-    const invoices = actionItem.invoices || [];
-    if (invoices.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для отмены" });
-      commentLines.push(`❌ Отмена не выполнена — не найдена накладная`);
-      return { results, commentLines };
-    }
-    const r = await executeCancelOrders(supabase, settings, invoices, taskId, dryRun);
+    const r = await executeCancelOrders(supabase, settings, actionItem.invoices || [], taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: отменена` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "restore_order") {
-    const invoices = actionItem.invoices || [];
-    if (invoices.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для восстановления" });
-      commentLines.push(`❌ Восстановление не выполнено — не найдена накладная`);
-      return { results, commentLines };
-    }
-    const r = await executeRestoreOrder(supabase, settings, invoices, taskId, dryRun);
+    const r = await executeRestoreOrder(supabase, settings, actionItem.invoices || [], taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: заказ восстановлен` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "update_receiver") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для обновления получателя" });
-      commentLines.push(`❌ Обновление получателя не выполнено — не найдена накладная`);
-      return { results, commentLines };
-    }
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Обновление получателя пропущено — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeUpdateReceiver(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: данные получателя обновлены` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "update_payment") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены оплаты" });
-      commentLines.push(`❌ Смена оплаты не выполнена — не найдена накладная`);
-      return { results, commentLines };
-    }
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена оплаты пропущена — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeUpdatePayment(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_direction") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены направления" });
-      commentLines.push(`❌ Смена направления не выполнена — не найдена накладная`);
-      return { results, commentLines };
-    }
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена направления пропущена — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeChangeDirection(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление изменено${r.changed ? ` (${r.changed})` : ` на ${r.city || actionItem.city}`}` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_shipment_type") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены типа перевозки" });
-      commentLines.push(`❌ Смена типа перевозки не выполнена — не найдена накладная`);
-      return { results, commentLines };
-    }
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена типа перевозки пропущена — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeChangeShipmentType(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     const typeLabel = actionItem.shipment_type === 2 ? "Авиа (Экспресс)" : "Авто (Стандарт)";
@@ -96,40 +68,22 @@ async function dispatchAction(
 
   } else if (actionItem.action === "update_sender") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для обновления отправителя" });
-      commentLines.push(`❌ Обновление отправителя не выполнено — не найдена накладная`);
-      return { results, commentLines };
-    }
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Обновление отправителя пропущено — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeUpdateSender(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: данные отправителя обновлены` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_sender_direction") {
     const filtered = filterInvoices(actionItem.invoices || []);
-    if (filtered.length === 0) {
-      results.push({ success: false, action: actionItem.action, error: "Нет накладной для смены направления отправителя" });
-      commentLines.push(`❌ Смена направления отправителя не выполнена — не найдена накладная`);
-      return { results, commentLines };
-    }
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена направления отправителя пропущена — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeChangeSenderDirection(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление отправителя изменено на ${r.city || actionItem.city}` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_act_number") {
-    const ftlIds = actionItem.ftl_order_ids || [];
-    if (ftlIds.length === 0 && !actionItem.act_number) {
-      results.push({ success: false, action: actionItem.action, error: "Нет данных для смены АВР (отсутствуют ftl_order_ids или act_number)" });
-      commentLines.push(`❌ Смена АВР не выполнена — не найдены необходимые данные`);
-      return { results, commentLines };
-    }
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
-
-  } else {
-    results.push({ success: false, action: actionItem.action, error: `Неподдерживаемое действие: ${actionItem.action}` });
-    commentLines.push(`❌ Неподдерживаемое действие: ${actionItem.action}`);
   }
 
   return { results, commentLines };
@@ -319,13 +273,8 @@ serve(async (req) => {
 
         const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-        // Guard against vacuous truth: empty results = no real work done
-        const hasAnyResults = allResults.length > 0;
-        const finalStatus = hasAnyResults ? (allSuccess ? "completed" : (anySuccess ? "completed" : "error")) : "error";
-        if (!hasAnyResults) {
-          console.error(`[${VERSION}] Task ${issueKey}: no results returned despite having actions — marking as error`);
-        }
-        await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults.length > 0 ? allResults : { error: "Нет результатов выполнения" } }).eq("id", taskId);
+        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+        await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
         if (anySuccess && allCommentLines.length > 0) {
           await addJiraComment(settings, jiraAuth, issueKey,
@@ -356,7 +305,7 @@ serve(async (req) => {
     // === Retry pending tasks from DB ===
     const { data: pendingRetries } = await supabase
       .from("processed_tasks").select("*")
-      .eq("status", "pending").limit(10);
+      .eq("status", "pending").not("ai_response", "is", null).limit(10);
 
     if (pendingRetries && pendingRetries.length > 0) {
       console.log(`[${VERSION}] Found ${pendingRetries.length} pending retry tasks`);
@@ -368,16 +317,7 @@ serve(async (req) => {
             .update({ status: "processing", retry_count: task.retry_count + 1 })
             .eq("id", taskId);
 
-          let aiResult = task.ai_response as any;
-          if (aiEnabled) {
-            console.log(`[${VERSION}] Re-parsing pending task ${issueKey} instead of reusing stale ai_response`);
-            aiResult = await parseWithAI(settings, task.jira_summary || "", task.jira_description || "", supabase, taskId);
-            const primaryAction = aiResult.actions?.[0]?.action || null;
-            await supabase.from("processed_tasks")
-              .update({ ai_response: aiResult, action: primaryAction })
-              .eq("id", taskId);
-          }
-
+          const aiResult = task.ai_response as any;
           if (!aiResult?.actions || aiResult.actions.length === 0) {
             await supabase.from("processed_tasks")
               .update({ status: "ignored", execution_result: { message: "Нет действий для повтора" } })
@@ -388,13 +328,8 @@ serve(async (req) => {
 
           const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-          // Guard against vacuous truth: empty results = no real work done
-          const hasAnyResults = allResults.length > 0;
-          const finalStatus = hasAnyResults ? (allSuccess ? "completed" : (anySuccess ? "completed" : "error")) : "error";
-          if (!hasAnyResults) {
-            console.error(`[${VERSION}] Retry task ${issueKey}: no results returned despite having actions — marking as error`);
-          }
-          await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults.length > 0 ? allResults : { error: "Нет результатов выполнения" } }).eq("id", taskId);
+          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+          await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
           if (!dryRun && allCommentLines.length > 0) {
             try {

@@ -183,14 +183,6 @@ export async function executeUpdateReceiver(
         response_data: { after: afterState }, success: true,
       });
 
-      // Check if any actual changes were made
-      const hasChanges = Object.keys(beforeState).length > 0;
-      if (!hasChanges) {
-        console.log(`[${VERSION}] No changes detected for ${invoice} — AI didn't provide address/receiver data`);
-        results.push({ invoice, success: false, error: "AI не предоставил данные для обновления (нет адреса, телефона или имени)" });
-        continue;
-      }
-
       if (dryRun) {
         results.push({ invoice, success: true, dry_run: true, before: beforeState, after: afterState });
         continue;

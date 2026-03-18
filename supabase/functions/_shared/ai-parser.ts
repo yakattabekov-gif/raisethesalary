@@ -75,7 +75,7 @@ async function callComparator(
 4. Если есть расхождения или ошибки — верни approved: false и объясни причину.
 5. Если можешь исправить — верни corrected_actions с правильным JSON.
 
-ВАЖНО: Если в заявке ЯВНО написано "отмена заказа", "отменить", "прошу отменить", "нужно отменить" — ВСЕГДА ОДОБРЯЙ отмену! Не блокируй и не отклоняй отмену если клиент чётко просит отменить. Для СТАНДАРТНЫХ операций (внести сумму, сменить адрес, сменить оплату) — если парсер правильно определил действие, накладную и данные — ОДОБРЯЙ.
+ВАЖНО: Будь консервативен при ОПАСНЫХ действиях (отмена заказа). Но для СТАНДАРТНЫХ операций (внести сумму, сменить адрес, сменить оплату) — если парсер правильно определил действие, накладную и данные — ОДОБРЯЙ.
 
 НЕ ОТКЛОНЯЙ заявки по следующим причинам:
 - "не указан счёт Каспи" — Каспи это просто способ оплаты (payment_method=2), счёт не нужен
@@ -138,93 +138,7 @@ function parseAIContent(aiContent: string): any {
       aiResult = { actions: [parsed] };
     }
   }
-  // Normalize each action to fix common AI mistakes
-  normalizeActions(aiResult);
   return aiResult;
-}
-
-// ---- Normalize actions: fix common AI field naming mistakes ----
-function normalizeActions(aiResult: any) {
-  if (!aiResult.actions || !Array.isArray(aiResult.actions)) return;
-  for (const action of aiResult.actions) {
-    // Normalize unsupported alias from reviewer/comparator
-    if (action.action === "add_receiver_phone") {
-      action.action = "update_receiver";
-      if (!action.receiver) action.receiver = {};
-      if (action.phone) {
-        const normalized = normalizePhone(String(action.phone));
-        // Primary: set as receiver phone (this is "смена номера получателя")
-        if (!action.receiver.phone) {
-          action.receiver.phone = normalized;
-        }
-        // Also set as additional_phone if not already set
-        if (!action.receiver.additional_phone) {
-          action.receiver.additional_phone = normalized;
-        }
-      }
-      // Map full_name / name if present at top level
-      if (action.name && !action.receiver.full_name) {
-        action.receiver.full_name = action.name;
-        delete action.name;
-      }
-      if (action.full_name && !action.receiver.full_name) {
-        action.receiver.full_name = action.full_name;
-        delete action.full_name;
-      }
-      if (!action.invoices || action.invoices.length === 0) {
-        if (action.waybill) action.invoices = [String(action.waybill)];
-      }
-      delete action.phone;
-      delete action.waybill;
-    }
-
-    // Fix invoice_number / invoice / waybill → invoices[]
-    if (!action.invoices || (Array.isArray(action.invoices) && action.invoices.length === 0)) {
-      if (action.invoice_number) {
-        action.invoices = Array.isArray(action.invoice_number) ? action.invoice_number : [action.invoice_number];
-        delete action.invoice_number;
-      } else if (action.invoice) {
-        action.invoices = Array.isArray(action.invoice) ? action.invoice : [action.invoice];
-        delete action.invoice;
-      } else if (action.waybill) {
-        action.invoices = Array.isArray(action.waybill) ? action.waybill : [action.waybill];
-        delete action.waybill;
-      }
-    }
-
-    // Fix update_payment: amount/sum/cash_sum at top level → payment object
-    if (action.action === "update_payment") {
-      if (!action.payment) action.payment = {};
-      if (action.amount !== undefined && action.amount !== null) {
-        if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) {
-          action.payment.cash_sum = Number(action.amount);
-        }
-        delete action.amount;
-      }
-      if (action.sum !== undefined && action.sum !== null) {
-        if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) {
-          action.payment.cash_sum = Number(action.sum);
-        }
-        delete action.sum;
-      }
-      if (action.payment_type !== undefined) {
-        if (action.payment.payment_type === undefined) action.payment.payment_type = action.payment_type;
-        delete action.payment_type;
-      }
-      if (action.payment_method !== undefined) {
-        if (action.payment.payment_method === undefined) action.payment.payment_method = action.payment_method;
-        delete action.payment_method;
-      }
-      if (action.cash_sum !== undefined) {
-        if (action.payment.cash_sum === undefined || action.payment.cash_sum === null) action.payment.cash_sum = Number(action.cash_sum);
-        delete action.cash_sum;
-      }
-      if (action.cod_payment !== undefined) {
-        if (action.payment.cod_payment === undefined) action.payment.cod_payment = action.cod_payment;
-        delete action.cod_payment;
-      }
-    }
-  }
 }
 
 // ---- Phone validation (unchanged logic) ----
@@ -336,8 +250,6 @@ export async function parseWithAI(
   } else if (comparatorResult.corrected_actions) {
     console.log(`[${VERSION}] Stage 3: CORRECTED — ${comparatorResult.reason}`);
     finalResult = { actions: comparatorResult.corrected_actions };
-    // Normalize corrected actions (comparator often uses wrong field names)
-    normalizeActions(finalResult);
   } else {
     console.log(`[${VERSION}] Stage 3: REJECTED — ${comparatorResult.reason}`);
     finalResult = { actions: [], rejected: true, reject_reason: comparatorResult.reason };
@@ -345,123 +257,6 @@ export async function parseWithAI(
 
   // Phone validation on final result
   validatePhones(finalResult, summary, description);
-
-  // Fallback: if update_receiver action has no receiver.phone but text has phones, populate it
-  if (finalResult.actions) {
-    const fullTextForPhones = `${summary} ${description}`;
-    const phoneRegex = /(?:\+?\s*[78])[\s\-]*(?:\d[\s\-]*){10}/g;
-    const rawPhoneMatches = fullTextForPhones.match(phoneRegex);
-    const textPhones = rawPhoneMatches
-      ? rawPhoneMatches.map((m: string) => normalizePhone(m.replace(/[\s\-()]/g, "")))
-      : [];
-    
-    for (const action of finalResult.actions) {
-      if (action.action === "update_receiver" && textPhones.length > 0) {
-        if (!action.receiver) action.receiver = {};
-        // If receiver has no phone set but there are phones in text — this is likely a phone change request
-        if (!action.receiver.phone && !action.receiver.additional_phone) {
-          const lowerText = fullTextForPhones.toLowerCase();
-          if (lowerText.includes("смена номера") || lowerText.includes("сменить номер") || 
-              lowerText.includes("изменить номер") || lowerText.includes("новый номер") ||
-              lowerText.includes("доп номер") || lowerText.includes("доп.номер") ||
-              lowerText.includes("дополнительный номер") || lowerText.includes("добавить номер")) {
-            action.receiver.phone = textPhones[0];
-            if (textPhones.length > 1) {
-              action.receiver.additional_phone = textPhones[1];
-            }
-            console.log(`[${VERSION}] Post-process: AI missed receiver phone, populated from text: ${textPhones[0]}`);
-          }
-        }
-        // If receiver has no full_name but description mentions a name after the phone
-        if (!action.receiver.full_name) {
-          const nameMatch = fullTextForPhones.match(/(?:\+?[78]\d{10})\s+([А-ЯЁа-яё]{2,}(?:\s+[А-ЯЁа-яё]{2,})*)/);
-          if (nameMatch) {
-            action.receiver.full_name = nameMatch[1].trim();
-            console.log(`[${VERSION}] Post-process: Extracted receiver name from text: ${action.receiver.full_name}`);
-          }
-        }
-      }
-
-      // Fallback: if update_receiver has no address but description mentions address change
-      if (action.action === "update_receiver" && !action.address) {
-        const lowerText = fullTextForPhones.toLowerCase();
-        if (lowerText.includes("смена адреса") || lowerText.includes("сменить адрес") || 
-            lowerText.includes("изменить адрес") || lowerText.includes("новый адрес") ||
-            lowerText.includes("адрес получателя")) {
-          // Try to extract address from description after "на" keyword
-          const addrMatch = fullTextForPhones.match(/(?:адрес[а-я]*\s+(?:получателя\s+)?(?:на\s+)?|на\s+)([А-ЯЁа-яё][А-ЯЁа-яё\s\d\.,\/\-]+?)(?:\s*$|\s*\n)/i);
-          if (addrMatch) {
-            const rawAddr = addrMatch[1].trim();
-            // Parse street and house from address
-            const streetHouseMatch = rawAddr.match(/^(.+?)\s+(\d+\S*)\s*(.*)?$/);
-            if (streetHouseMatch) {
-              action.address = {
-                street: streetHouseMatch[1].trim(),
-                house: streetHouseMatch[2].trim(),
-              };
-              // Check for корпус/кв/flat
-              const rest = streetHouseMatch[3] || "";
-              const korpusMatch = rest.match(/корпус\s*(\d+)/i);
-              const kvMatch = rest.match(/кв(?:артира)?\s*\.?\s*(\d+)/i);
-              if (korpusMatch) {
-                action.address.house = `${action.address.house} корпус ${korpusMatch[1]}`;
-              }
-              if (kvMatch) {
-                action.address.flat = kvMatch[1];
-              }
-              console.log(`[${VERSION}] Post-process: AI missed address, extracted from text: street="${action.address.street}", house="${action.address.house}"`);
-            } else {
-              // Can't parse structured — use raw as full_address
-              action.address = { street: rawAddr, house: "" };
-              console.log(`[${VERSION}] Post-process: AI missed address, extracted raw: "${rawAddr}"`);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Fallback: extract invoices from original text if AI forgot them
-  if (finalResult.actions) {
-    const fullText = `${summary} ${description}`;
-    const invoicePattern = /(?:(?:KXT|SP|SLQ|AR|kxt|sp|slq|ar)\d{6,12}|\b\d{12,15}\b)/gi;
-    const textInvoices = fullText.match(invoicePattern) || [];
-
-    for (const action of finalResult.actions) {
-      if (action.action === "change_act_number") continue; // no invoices needed
-      if (!action.invoices || action.invoices.length === 0) {
-        if (textInvoices.length > 0) {
-          console.log(`[${VERSION}] Post-process: AI missed invoices, extracting from text: ${textInvoices.join(", ")}`);
-          action.invoices = [...textInvoices];
-        }
-      }
-
-      // Fallback: extract cash_sum from text if AI missed it for update_payment
-      if (action.action === "update_payment" && action.payment) {
-        if (action.payment.cash_sum === null || action.payment.cash_sum === undefined) {
-          const sumMatch = fullText.match(/(\d+[\.,]?\d*)\s*(?:тг|тенге|₸)/i);
-          if (sumMatch) {
-            const extractedSum = Number(sumMatch[1].replace(",", "."));
-            if (extractedSum > 0) {
-              console.log(`[${VERSION}] Post-process: AI missed cash_sum, extracted from text: ${extractedSum}`);
-              action.payment.cash_sum = extractedSum;
-            }
-          }
-        }
-        // Fallback: detect payment_method from summary/description
-        if (action.payment.payment_method === null || action.payment.payment_method === undefined) {
-          const lowerText = fullText.toLowerCase();
-          if (lowerText.includes("каспи") || lowerText.includes("kaspi")) {
-            action.payment.payment_method = 2;
-            console.log(`[${VERSION}] Post-process: detected Kaspi payment method from text`);
-          } else if (lowerText.includes("наличк") || lowerText.includes("наличн")) {
-            action.payment.payment_method = 4;
-            console.log(`[${VERSION}] Post-process: detected cash payment method from text`);
-          }
-        }
-      }
-    }
-  }
 
   // Strip "Казахстан" from city fields — it's a country, not a city
   if (finalResult.actions) {
@@ -474,6 +269,7 @@ export async function parseWithAI(
         console.log(`[${VERSION}] Post-process: stripped "Казахстан" from action.city`);
         action.city = null;
       }
+      // Also strip from full_address prefix
       if (action.address?.full_address) {
         action.address.full_address = action.address.full_address.replace(/^Казахстан,?\s*/i, "");
       }
@@ -496,10 +292,10 @@ function getBuiltInPrompt(): string {
 ТВОЯ ЗАДАЧА — определить ВСЕ действия, которые клиент просит выполнить в одной заявке. Заявка может содержать НЕСКОЛЬКО действий одновременно.
 
 Поддерживаемые действия:
-1. ОТМЕНА ЗАКАЗА (action: "cancel") — клиент просит ОТМЕНИТЬ заказ/накладную. Если в заявке ЧЕТКО написано "отмена заказа", "отменить заказ", "отмена заявки", "аннулировать", "удалить заявку", "удалить заказ", "удалить накладную", "просим отменить", "нужно отменить", "прошу отменить" — ВСЕГДА ставь action: "cancel". НЕ ИГНОРИРУЙ такие заявки ни при каких условиях! Даже если в заявке есть другие слова/просьбы — отмена имеет ВЫСШИЙ ПРИОРИТЕТ.
+1. ОТМЕНА ЗАКАЗА (action: "cancel") — клиент ЯВНО просит ОТМЕНИТЬ заказ/накладную (слова: "отменить", "отмена заказа", "аннулировать", "удалить заявку", "удалить заказ", "удалить накладную")
 2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — клиент просит изменить адрес доставки (только ПОЛУЧАТЕЛЯ!)
 3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — клиент просит изменить ФИО и/или телефон ПОЛУЧАТЕЛЯ, а также ДОБАВИТЬ ДОП.НОМЕР
-4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить способ или тип оплаты, ВНЕСТИ СУММУ, ВЫСТАВИТЬ СЧЁТ НА ОПЛАТУ, или убрать/добавить НАЛОЖНЫЙ ПЛАТЕЖ (НП/наложку). "Выставить счёт на оплату" = "внести сумму" = update_payment с cash_sum!
+4. СМЕНА ОПЛАТЫ (action: "update_payment") — клиент просит изменить способ или тип оплаты, ВНЕСТИ СУММУ, или убрать/добавить НАЛОЖНЫЙ ПЛАТЕЖ (НП/наложку)
 5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — клиент просит изменить ГОРОД НАЗНАЧЕНИЯ/ДОСТАВКИ (получателя)
 6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — клиент просит сменить тип перевозки (авто/авиа)
 7. СМЕНА АДРЕСА ОТПРАВИТЕЛЯ (action: "update_sender") — клиент просит изменить адрес/данные ОТПРАВИТЕЛЯ
@@ -608,22 +404,6 @@ function getBuiltInPrompt(): string {
     {"action": "update_payment", "invoices": ["SP00489715"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 3656}},
     {"action": "update_payment", "invoices": ["SP00490201"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 26607}},
     {"action": "update_payment", "invoices": ["SP00493407"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 29766}}
-  ]
-}
-
-Пример ВЫСТАВИТЬ СЧЁТ НА ОПЛАТУ (= внести сумму):
-Текст: "SP00509038 прошу выставить счет на оплату 3642.4 тг"
-{
-  "actions": [
-    {"action": "update_payment", "invoices": ["SP00509038"], "payment": {"payment_type": null, "payment_method": null, "cash_sum": 3642.4}}
-  ]
-}
-
-Пример ВНЕСТИ СУММУ НА КАСПИЙ (одна накладная):
-Текст: "SP00508472 - Стоимость итого: 42025 тг" (тема: "внести сумму на каспи")
-{
-  "actions": [
-    {"action": "update_payment", "invoices": ["SP00508472"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 42025}}
   ]
 }
 
@@ -737,19 +517,12 @@ function getBuiltInPrompt(): string {
 - cash_sum: ТОЛЬКО если сумма ЯВНО указана. Иначе null.
 - Если у каждой накладной СВОЯ сумма — создай ОТДЕЛЬНЫЙ update_payment для каждой!
 
-КРИТИЧЕСКИ ВАЖНО — "ВНЕСТИ СУММУ" / "ВЫСТАВИТЬ СЧЁТ" / "НАЛИЧКА" / "КАСПИ" (БЕЗ упоминания НП):
-Когда пишут "внести сумму", "внести сумму наличку", "внести сумму на каспи", "выставить счёт на оплату", "сумма за перевозку", "стоимость итого" и НЕТ слов "НП"/"наложка"/"наложный платеж" — это ОПЛАТА ЗА ПЕРЕВОЗКУ!
+КРИТИЧЕСКИ ВАЖНО — "ВНЕСТИ СУММУ" / "НАЛИЧКА" / "КАСПИ" (БЕЗ упоминания НП):
+Когда пишут "внести сумму", "внести сумму наличку", "внести сумму на каспи", "сумма за перевозку" и НЕТ слов "НП"/"наложка"/"наложный платеж" — это ОПЛАТА ЗА ПЕРЕВОЗКУ!
 - "внести сумму на каспи 18932" → payment: {"cash_sum": 18932, "payment_method": 2, "payment_type": null, "cod_payment": null}
 - "внести сумму наличку 5000" → payment: {"cash_sum": 5000, "payment_method": 4, "payment_type": null, "cod_payment": null}
 - "внести сумму 10000" (без уточнения метода) → payment: {"cash_sum": 10000, "payment_method": null, "payment_type": null, "cod_payment": null}
-- "выставить счёт на оплату 3642 тг" → payment: {"cash_sum": 3642, "payment_method": null, "payment_type": null, "cod_payment": null}
-- "Стоимость итого: 42025 тг" + тема "внести сумму на каспи" → payment: {"cash_sum": 42025, "payment_method": 2, "payment_type": null, "cod_payment": null}
 НЕ ОТКЛОНЯЙ такие заявки! Это стандартная операция update_payment!
-
-⚠️ САМАЯ ЧАСТАЯ ОШИБКА: НЕ ЗАБЫВАЙ ИЗВЛЕЧЬ НОМЕР НАКЛАДНОЙ И СУММУ! 
-Каждое действие ОБЯЗАТЕЛЬНО должно содержать поле "invoices" с массивом номеров накладных!
-Если пишут "SP00508472 - Стоимость итого: 42025 тг" → invoices: ["SP00508472"], payment.cash_sum: 42025.
-НИКОГДА не возвращай action без invoices (кроме change_act_number)!
 
 КРИТИЧЕСКИ ВАЖНО — НАЛОЖНЫЙ ПЛАТЕЖ (НП / наложка / cod_payment):
 НП (наложный платёж) — это ОТДЕЛЬНОЕ поле cod_payment! Это НЕ payment_type, НЕ payment_method, НЕ cash_sum!
