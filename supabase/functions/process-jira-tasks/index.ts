@@ -388,8 +388,13 @@ serve(async (req) => {
 
           const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
-          await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
+          // Guard against vacuous truth: empty results = no real work done
+          const hasAnyResults = allResults.length > 0;
+          const finalStatus = hasAnyResults ? (allSuccess ? "completed" : (anySuccess ? "completed" : "error")) : "error";
+          if (!hasAnyResults) {
+            console.error(`[${VERSION}] Retry task ${issueKey}: no results returned despite having actions — marking as error`);
+          }
+          await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults.length > 0 ? allResults : { error: "Нет результатов выполнения" } }).eq("id", taskId);
 
           if (!dryRun && allCommentLines.length > 0) {
             try {
