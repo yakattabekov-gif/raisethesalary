@@ -48,9 +48,10 @@ export function parseStatusHistory(statusData: any): any[] {
 }
 
 export async function checkOrderRestored(invoiceNumber: string, sparkToken: string): Promise<boolean> {
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
   try {
     const historyResp = await fetch(
-      `https://gateway.spark.kz/cabinet/api/order-statuses/${encodeURIComponent(invoiceNumber)}/history`,
+      `https://gateway.spark.kz/cabinet/api/order-statuses/${encodeURIComponent(normalized)}/history`,
       { headers: { Authorization: `Bearer ${sparkToken}`, Accept: "application/json" } }
     );
     if (!historyResp.ok) {
