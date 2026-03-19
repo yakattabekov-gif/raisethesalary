@@ -75,8 +75,9 @@ export async function checkOrderRestored(invoiceNumber: string, sparkToken: stri
 export async function checkSenderStatusAllowed(
   invoice: string, sparkToken: string, supabase: any, taskId: string, actionName: string
 ): Promise<{ allowed: boolean; error?: string }> {
+  const normalized = normalizeInvoiceNumber(invoice);
   const statusResp = await fetch(
-    `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+    `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(normalized)}`
   );
   if (!statusResp.ok) {
     return { allowed: false, error: `Status check failed: ${statusResp.status}` };
