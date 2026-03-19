@@ -66,13 +66,24 @@ Deno.serve(async (req) => {
     const username = s.spark_login_email;
     const password = s.spark_login_password;
     const clientId = s.spark_client_id || "1";
-    const clientSecret = s.spark_client_secret;
+    const clientSecret = s.spark_client_secret || "";
 
-    if (!username || !password || !clientSecret) {
-      throw new Error("Spark login credentials not configured in settings (username, password, client_secret required)");
+    if (!username || !password) {
+      throw new Error("Spark login credentials not configured in settings (username, password required)");
     }
 
     console.log(`Attempting Spark OAuth login for: ${username}`);
+
+    const loginBody: any = {
+      username,
+      password,
+      client_id: Number(clientId),
+      grant_type: "password",
+    };
+    // Only include client_secret if configured
+    if (clientSecret) {
+      loginBody.client_secret = clientSecret;
+    }
 
     const loginResponse = await fetch(loginUrl, {
       method: "POST",
@@ -80,13 +91,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
         "Accept": "application/json",
       },
-      body: JSON.stringify({
-        username,
-        password,
-        client_id: Number(clientId),
-        client_secret: clientSecret,
-        grant_type: "password",
-      }),
+      body: JSON.stringify(loginBody),
     });
 
     if (!loginResponse.ok) {
