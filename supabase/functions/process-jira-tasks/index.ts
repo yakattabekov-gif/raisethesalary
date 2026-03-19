@@ -186,6 +186,52 @@ serve(async (req) => {
     const dryRun = settings.dry_run === "true";
     const aiEnabled = settings.ai_enabled === "true";
 
+    // Auto-refresh Spark token if expired (check last refresh timestamp)
+    const lastRefresh = settings.spark_token_last_refresh;
+    const tokenMaxAge = 6 * 24 * 60 * 60 * 1000; // 6 days in ms
+    const needsRefresh = !lastRefresh || (Date.now() - new Date(lastRefresh).getTime() > tokenMaxAge);
+    
+    if (needsRefresh && settings.spark_login_email && settings.spark_login_password && settings.spark_client_secret) {
+      console.log(`[${VERSION}] Spark token expired or missing — auto-refreshing...`);
+      try {
+        const loginUrl = settings.spark_login_url || "https://gateway.spark.kz/oauth/token";
+        const clientId = settings.spark_client_id || "1";
+        const loginResp = await fetch(loginUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({
+            username: settings.spark_login_email,
+            password: settings.spark_login_password,
+            client_id: Number(clientId),
+            client_secret: settings.spark_client_secret,
+            grant_type: "password",
+          }),
+        });
+        if (loginResp.ok) {
+          const loginData = await loginResp.json();
+          const newToken = loginData.access_token || loginData.token;
+          if (newToken) {
+            await supabase.from("settings").upsert(
+              { key: "spark_bearer_token", value: newToken, category: "general" },
+              { onConflict: "key" }
+            );
+            await supabase.from("settings").upsert(
+              { key: "spark_token_last_refresh", value: new Date().toISOString(), category: "general" },
+              { onConflict: "key" }
+            );
+            settings.spark_bearer_token = newToken;
+            settings.spark_token_last_refresh = new Date().toISOString();
+            console.log(`[${VERSION}] Spark token auto-refreshed successfully`);
+          }
+        } else {
+          const errText = await loginResp.text();
+          console.error(`[${VERSION}] Spark token auto-refresh failed: ${loginResp.status} - ${errText}`);
+        }
+      } catch (refreshErr: any) {
+        console.error(`[${VERSION}] Spark token auto-refresh error: ${refreshErr.message}`);
+      }
+    }
+
     if (!settings.jira_base_url || !settings.jira_email || !settings.jira_api_token) {
       throw new Error("Jira settings not configured");
     }
