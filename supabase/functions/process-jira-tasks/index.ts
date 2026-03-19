@@ -84,6 +84,24 @@ async function dispatchAction(
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
+
+  } else if (actionItem.action === "create_invoice") {
+    // Map create_invoice → update_payment (AI sometimes misclassifies "внести сумму на каспи")
+    console.log(`[${VERSION}] Remapping create_invoice → update_payment`);
+    const remapped = { ...actionItem, action: "update_payment" };
+    if (!remapped.payment) {
+      remapped.payment = {
+        payment_type: null,
+        payment_method: actionItem.payment_method || null,
+        cash_sum: actionItem.cash_sum || null,
+        cod_payment: null,
+      };
+    }
+    const filtered = filterInvoices(remapped.invoices || []);
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена оплаты пропущена — заказ будет отменён`); return { results, commentLines }; }
+    const r = await executeUpdatePayment(supabase, settings, { ...remapped, invoices: filtered }, taskId, dryRun);
+    results.push(...r);
+    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`));
   }
 
   return { results, commentLines };
