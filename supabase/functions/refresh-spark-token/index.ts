@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     }
 
     const loginData = await loginResponse.json();
-    const token = loginData.access_token || loginData.token;
+    const newToken = loginData.access_token || loginData.token;
 
     if (!token) {
       console.error("Login response:", JSON.stringify(loginData));
