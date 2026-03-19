@@ -191,21 +191,24 @@ serve(async (req) => {
     const tokenMaxAge = 6 * 24 * 60 * 60 * 1000; // 6 days in ms
     const needsRefresh = !lastRefresh || (Date.now() - new Date(lastRefresh).getTime() > tokenMaxAge);
     
-    if (needsRefresh && settings.spark_login_email && settings.spark_login_password && settings.spark_client_secret) {
+    if (needsRefresh && settings.spark_login_email && settings.spark_login_password) {
       console.log(`[${VERSION}] Spark token expired or missing — auto-refreshing...`);
       try {
         const loginUrl = settings.spark_login_url || "https://gateway.spark.kz/oauth/token";
         const clientId = settings.spark_client_id || "1";
+        const loginBody: any = {
+          username: settings.spark_login_email,
+          password: settings.spark_login_password,
+          client_id: Number(clientId),
+          grant_type: "password",
+        };
+        if (settings.spark_client_secret) {
+          loginBody.client_secret = settings.spark_client_secret;
+        }
         const loginResp = await fetch(loginUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify({
-            username: settings.spark_login_email,
-            password: settings.spark_login_password,
-            client_id: Number(clientId),
-            client_secret: settings.spark_client_secret,
-            grant_type: "password",
-          }),
+          body: JSON.stringify(loginBody),
         });
         if (loginResp.ok) {
           const loginData = await loginResp.json();
