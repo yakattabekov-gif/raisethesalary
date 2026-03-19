@@ -153,9 +153,20 @@ export function stripCityFromAddress(addr: string, allCities?: any[]): string {
   return addr;
 }
 
+export function normalizeInvoiceNumber(invoice: string): string {
+  if (!invoice) return invoice;
+  // Strip trailing non-alphanumeric suffixes like "V", "v", etc.
+  // Keep prefixes like KXT, SP, SLQ, AR
+  return invoice.replace(/[A-Za-zА-Яа-яЁё]+$/g, "").trim();
+}
+
 export async function searchInvoice(sparkUrl: string, sparkToken: string, invoice: string) {
+  const normalized = normalizeInvoiceNumber(invoice);
+  if (normalized !== invoice) {
+    console.log(`[${VERSION}] Normalized invoice: "${invoice}" → "${normalized}"`);
+  }
   const searchResp = await fetch(
-    `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+    `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(normalized)}`,
     { headers: { Authorization: `Bearer ${sparkToken}` } }
   );
   if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
