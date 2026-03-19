@@ -95,15 +95,15 @@ Deno.serve(async (req) => {
     }
 
     const loginData = await loginResponse.json();
-    const token = loginData.access_token || loginData.token;
+    const newToken = loginData.access_token || loginData.token;
 
-    if (!token) {
+    if (!newToken) {
       console.error("Login response:", JSON.stringify(loginData));
       throw new Error("No access_token found in Spark login response");
     }
 
     // Store token as-is (no encoding)
-    const encodedToken = token;
+    const encodedToken = newToken;
 
     await supabaseAdmin
       .from("settings")
