@@ -84,24 +84,6 @@ async function dispatchAction(
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
-
-  } else if (actionItem.action === "create_invoice") {
-    // Map create_invoice → update_payment (AI sometimes misclassifies "внести сумму на каспи")
-    console.log(`[${VERSION}] Remapping create_invoice → update_payment`);
-    const remapped = { ...actionItem, action: "update_payment" };
-    if (!remapped.payment) {
-      remapped.payment = {
-        payment_type: null,
-        payment_method: actionItem.payment_method || null,
-        cash_sum: actionItem.cash_sum || null,
-        cod_payment: null,
-      };
-    }
-    const filtered = filterInvoices(remapped.invoices || []);
-    if (filtered.length === 0) { commentLines.push(`ℹ️ Смена оплаты пропущена — заказ будет отменён`); return { results, commentLines }; }
-    const r = await executeUpdatePayment(supabase, settings, { ...remapped, invoices: filtered }, taskId, dryRun);
-    results.push(...r);
-    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: оплата обновлена` : `❌ ${r.invoice}: ${r.error}`));
   }
 
   return { results, commentLines };
@@ -186,55 +168,6 @@ serve(async (req) => {
     const dryRun = settings.dry_run === "true";
     const aiEnabled = settings.ai_enabled === "true";
 
-    // Auto-refresh Spark token if expired (check last refresh timestamp)
-    const lastRefresh = settings.spark_token_last_refresh;
-    const tokenMaxAge = 6 * 24 * 60 * 60 * 1000; // 6 days in ms
-    const needsRefresh = !lastRefresh || (Date.now() - new Date(lastRefresh).getTime() > tokenMaxAge);
-    
-    if (needsRefresh && settings.spark_login_email && settings.spark_login_password) {
-      console.log(`[${VERSION}] Spark token expired or missing — auto-refreshing...`);
-      try {
-        const loginUrl = settings.spark_login_url || "https://gateway.spark.kz/oauth/token";
-        const clientId = settings.spark_client_id || "1";
-        const loginBody: any = {
-          username: settings.spark_login_email,
-          password: settings.spark_login_password,
-          client_id: Number(clientId),
-          grant_type: "password",
-        };
-        if (settings.spark_client_secret) {
-          loginBody.client_secret = settings.spark_client_secret;
-        }
-        const loginResp = await fetch(loginUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Accept": "application/json" },
-          body: JSON.stringify(loginBody),
-        });
-        if (loginResp.ok) {
-          const loginData = await loginResp.json();
-          const newToken = loginData.access_token || loginData.token;
-          if (newToken) {
-            await supabase.from("settings").upsert(
-              { key: "spark_bearer_token", value: newToken, category: "general" },
-              { onConflict: "key" }
-            );
-            await supabase.from("settings").upsert(
-              { key: "spark_token_last_refresh", value: new Date().toISOString(), category: "general" },
-              { onConflict: "key" }
-            );
-            settings.spark_bearer_token = newToken;
-            settings.spark_token_last_refresh = new Date().toISOString();
-            console.log(`[${VERSION}] Spark token auto-refreshed successfully`);
-          }
-        } else {
-          const errText = await loginResp.text();
-          console.error(`[${VERSION}] Spark token auto-refresh failed: ${loginResp.status} - ${errText}`);
-        }
-      } catch (refreshErr: any) {
-        console.error(`[${VERSION}] Spark token auto-refresh error: ${refreshErr.message}`);
-      }
-    }
-
     if (!settings.jira_base_url || !settings.jira_email || !settings.jira_api_token) {
       throw new Error("Jira settings not configured");
     }
@@ -302,7 +235,7 @@ serve(async (req) => {
         if (existing?.status === "waiting_for_info") {
           console.log(`[${VERSION}] Task ${issueKey} is waiting_for_info — checking comments`);
           const commentsText = await fetchJiraComments(settings, jiraAuth, issueKey);
-          const invoicePattern = /(?:(?:KXT|SP|SLQ|AR|kxt|sp|slq|ar)\d{6,12}[A-Za-z]?|\b\d{12,15}[A-Za-z]?\b)/gi;
+          const invoicePattern = /(?:KXT|SP|SLQ|kxt|sp|slq)\d{6,12}/gi;
           const commentInvoices = commentsText.match(invoicePattern);
           if (commentInvoices && commentInvoices.length > 0) {
             combinedDescription = `${description}\n\nИз комментариев: номера накладных: ${commentInvoices.join(", ")}`;
@@ -340,8 +273,7 @@ serve(async (req) => {
 
         const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-        const hasErrors = allResults.some((r: any) => !r.success);
-        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : (hasErrors ? "error" : "ignored"));
+        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
         await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
         if (anySuccess && allCommentLines.length > 0) {
@@ -396,8 +328,7 @@ serve(async (req) => {
 
           const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-          const retryHasErrors = allResults.some((r: any) => !r.success);
-          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : (retryHasErrors ? "error" : "ignored"));
+          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
           await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
           if (!dryRun && allCommentLines.length > 0) {

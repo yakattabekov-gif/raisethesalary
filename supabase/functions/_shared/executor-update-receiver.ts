@@ -85,12 +85,25 @@ export async function executeUpdateReceiver(
 
       // Handle address change
       if (newAddress) {
-        // IMPORTANT: update_receiver NEVER changes city. City changes go through change_direction.
-        // Always use the current receiver city for geocoding.
-        const effectiveCity = receiverCity;
+        const requestedCity = newAddress.city || null;
+        const effectiveCity = requestedCity || receiverCity;
 
-        if (newAddress.city && newAddress.city.toLowerCase() !== receiverCity.toLowerCase()) {
-          console.log(`[${VERSION}] update_receiver: IGNORING city change "${receiverCity}" -> "${newAddress.city}" for ${invoice} — city changes must go through change_direction`);
+        if (requestedCity && receiverCity && requestedCity.toLowerCase() !== receiverCity.toLowerCase()) {
+          console.log(`[${VERSION}] update_receiver: city change requested "${receiverCity}" -> "${requestedCity}" for ${invoice}`);
+          const { data: cityRows } = await supabase
+            .from("spark_cities")
+            .select("id, name")
+            .ilike("name", requestedCity);
+          if (cityRows && cityRows.length > 0) {
+            const newCityId = cityRows[0].id;
+            beforeState.city_id = updatePayload.city_id;
+            beforeState.city = receiverCity;
+            updatePayload.city_id = Number(newCityId);
+            afterState.city_id = Number(newCityId);
+            afterState.city = cityRows[0].name;
+          } else {
+            console.log(`[${VERSION}] update_receiver: WARNING - city "${requestedCity}" not found in spark_cities, keeping original city_id`);
+          }
         }
 
         const yandexApiKey = settings.yandex_geocoder_api_key;

@@ -66,24 +66,13 @@ Deno.serve(async (req) => {
     const username = s.spark_login_email;
     const password = s.spark_login_password;
     const clientId = s.spark_client_id || "1";
-    const clientSecret = s.spark_client_secret || "";
+    const clientSecret = s.spark_client_secret;
 
-    if (!username || !password) {
-      throw new Error("Spark login credentials not configured in settings (username, password required)");
+    if (!username || !password || !clientSecret) {
+      throw new Error("Spark login credentials not configured in settings (username, password, client_secret required)");
     }
 
     console.log(`Attempting Spark OAuth login for: ${username}`);
-
-    const loginBody: any = {
-      username,
-      password,
-      client_id: Number(clientId),
-      grant_type: "password",
-    };
-    // Only include client_secret if configured
-    if (clientSecret) {
-      loginBody.client_secret = clientSecret;
-    }
 
     const loginResponse = await fetch(loginUrl, {
       method: "POST",
@@ -91,7 +80,13 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
         "Accept": "application/json",
       },
-      body: JSON.stringify(loginBody),
+      body: JSON.stringify({
+        username,
+        password,
+        client_id: Number(clientId),
+        client_secret: clientSecret,
+        grant_type: "password",
+      }),
     });
 
     if (!loginResponse.ok) {
@@ -100,15 +95,15 @@ Deno.serve(async (req) => {
     }
 
     const loginData = await loginResponse.json();
-    const newToken = loginData.access_token || loginData.token;
+    const token = loginData.access_token || loginData.token;
 
-    if (!newToken) {
+    if (!token) {
       console.error("Login response:", JSON.stringify(loginData));
       throw new Error("No access_token found in Spark login response");
     }
 
     // Store token as-is (no encoding)
-    const encodedToken = newToken;
+    const encodedToken = token;
 
     await supabaseAdmin
       .from("settings")
