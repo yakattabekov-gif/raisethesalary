@@ -273,7 +273,8 @@ serve(async (req) => {
 
         const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+        const hasErrors = allResults.some((r: any) => !r.success);
+        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : (hasErrors ? "error" : "ignored"));
         await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
         if (anySuccess && allCommentLines.length > 0) {
