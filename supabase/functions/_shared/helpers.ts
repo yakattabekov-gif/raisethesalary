@@ -48,9 +48,10 @@ export function parseStatusHistory(statusData: any): any[] {
 }
 
 export async function checkOrderRestored(invoiceNumber: string, sparkToken: string): Promise<boolean> {
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
   try {
     const historyResp = await fetch(
-      `https://gateway.spark.kz/cabinet/api/order-statuses/${encodeURIComponent(invoiceNumber)}/history`,
+      `https://gateway.spark.kz/cabinet/api/order-statuses/${encodeURIComponent(normalized)}/history`,
       { headers: { Authorization: `Bearer ${sparkToken}`, Accept: "application/json" } }
     );
     if (!historyResp.ok) {
@@ -74,8 +75,9 @@ export async function checkOrderRestored(invoiceNumber: string, sparkToken: stri
 export async function checkSenderStatusAllowed(
   invoice: string, sparkToken: string, supabase: any, taskId: string, actionName: string
 ): Promise<{ allowed: boolean; error?: string }> {
+  const normalized = normalizeInvoiceNumber(invoice);
   const statusResp = await fetch(
-    `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
+    `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(normalized)}`
   );
   if (!statusResp.ok) {
     return { allowed: false, error: `Status check failed: ${statusResp.status}` };
@@ -153,9 +155,20 @@ export function stripCityFromAddress(addr: string, allCities?: any[]): string {
   return addr;
 }
 
+export function normalizeInvoiceNumber(invoice: string): string {
+  if (!invoice) return invoice;
+  // Strip trailing non-alphanumeric suffixes like "V", "v", etc.
+  // Keep prefixes like KXT, SP, SLQ, AR
+  return invoice.replace(/[A-Za-zА-Яа-яЁё]+$/g, "").trim();
+}
+
 export async function searchInvoice(sparkUrl: string, sparkToken: string, invoice: string) {
+  const normalized = normalizeInvoiceNumber(invoice);
+  if (normalized !== invoice) {
+    console.log(`[${VERSION}] Normalized invoice: "${invoice}" → "${normalized}"`);
+  }
   const searchResp = await fetch(
-    `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(invoice)}`,
+    `${sparkUrl}/admin/logistics-info?page=1&limit=50&search=${encodeURIComponent(normalized)}`,
     { headers: { Authorization: `Bearer ${sparkToken}` } }
   );
   if (!searchResp.ok) throw new Error(`Search failed: ${searchResp.status}`);
