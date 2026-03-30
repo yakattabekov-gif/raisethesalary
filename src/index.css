@@ -266,10 +266,12 @@
 
   .onay-surface {
     position: relative;
-    height: calc(100% - 139px);
+    height: calc(100% - 120px);
     overflow-y: auto;
     overflow-x: hidden;
     background: hsl(228 22% 94%);
+    border-radius: 28px 28px 0 0;
+    padding: 20px 14px 0;
     border-radius: 28px 28px 0 0;
     padding: 20px 14px 0;
   }
