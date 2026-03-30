@@ -60,7 +60,7 @@ const BatteryIcon = () => (
 );
 
 const TicketStamp = () => (
-  <svg className="onay-stamp" viewBox="0 0 52 52" fill="none" aria-hidden="true">
+  <svg width="52" height="52" viewBox="0 0 52 52" fill="none" aria-hidden="true" style={{ width: 52, height: 52, flexShrink: 0 }}>
     <rect width="52" height="52" rx="12" fill="hsl(226 43% 97%)" />
     <path d="M2 13C12 11 21 13 26 18C31 23 39 25 50 22" stroke="hsl(235 28% 90%)" strokeWidth="1" />
     <path d="M1 28C12 26 22 28 27 33C32 38 39 40 51 37" stroke="hsl(235 28% 90%)" strokeWidth="1" />
