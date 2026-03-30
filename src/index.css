@@ -267,35 +267,38 @@
   .onay-surface {
     position: relative;
     height: calc(100% - 139px);
-    background: hsl(var(--onay-surface));
-    padding: 18px 16px 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: hsl(228 22% 94%);
+    border-radius: 28px 28px 0 0;
+    padding: 20px 14px 0;
   }
 
   .onay-day-pill-wrap {
     display: flex;
     justify-content: center;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
   }
 
   .onay-day-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 112px;
-    height: 40px;
+    min-width: 92px;
+    height: 34px;
     border-radius: 999px;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(228 14% 88%);
     background: hsl(var(--card));
     color: hsl(var(--onay-text));
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
-    box-shadow: 0 1px 2px hsl(var(--onay-shadow) / 0.06);
+    box-shadow: 0 1px 2px hsl(var(--onay-shadow) / 0.04);
   }
 
   .onay-list {
     display: grid;
-    gap: 16px;
-    padding-bottom: 192px;
+    gap: 12px;
+    padding-bottom: 200px;
   }
 
   .onay-ticket {
