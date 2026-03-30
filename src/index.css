@@ -190,25 +190,25 @@
 
   .onay-top {
     position: relative;
-    height: 139px;
+    height: 120px;
     background: hsl(var(--onay-top));
   }
 
   .onay-logo-pill {
     position: absolute;
     left: 50%;
-    top: 11px;
+    top: 14px;
     transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 72px;
-    height: 30px;
-    padding: 0 16px;
+    min-width: 68px;
+    height: 26px;
+    padding: 0 14px;
     border-radius: 999px;
     background: hsl(var(--onay-accent));
     color: hsl(var(--onay-accent-ink));
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 900;
     letter-spacing: 0.01em;
     line-height: 1;
@@ -218,22 +218,22 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 22px 22px 0;
+    padding: 16px 26px 0;
     color: hsl(var(--onay-text));
   }
 
   .onay-status-left {
     display: flex;
     align-items: center;
-    gap: 7px;
-    font-size: 18px;
-    font-weight: 700;
+    gap: 4px;
+    font-size: 16px;
+    font-weight: 600;
   }
 
   .onay-status-right {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 5px;
   }
 
   .onay-nav {
@@ -241,13 +241,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 30px 22px 0;
+    padding: 18px 22px 0;
   }
 
   .onay-back-button {
     position: absolute;
-    left: 18px;
-    top: 26px;
+    left: 20px;
+    top: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -258,7 +258,7 @@
 
   .onay-title {
     color: hsl(var(--onay-text));
-    font-size: 23px;
+    font-size: 20px;
     font-weight: 700;
     line-height: 1;
     letter-spacing: -0.02em;
