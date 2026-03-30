@@ -190,25 +190,25 @@
 
   .onay-top {
     position: relative;
-    height: 139px;
+    height: 120px;
     background: hsl(var(--onay-top));
   }
 
   .onay-logo-pill {
     position: absolute;
     left: 50%;
-    top: 11px;
+    top: 14px;
     transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 72px;
-    height: 30px;
-    padding: 0 16px;
+    min-width: 68px;
+    height: 26px;
+    padding: 0 14px;
     border-radius: 999px;
     background: hsl(var(--onay-accent));
     color: hsl(var(--onay-accent-ink));
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 900;
     letter-spacing: 0.01em;
     line-height: 1;
@@ -218,22 +218,22 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 22px 22px 0;
+    padding: 16px 26px 0;
     color: hsl(var(--onay-text));
   }
 
   .onay-status-left {
     display: flex;
     align-items: center;
-    gap: 7px;
-    font-size: 18px;
-    font-weight: 700;
+    gap: 4px;
+    font-size: 16px;
+    font-weight: 600;
   }
 
   .onay-status-right {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 5px;
   }
 
   .onay-nav {
@@ -241,13 +241,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 30px 22px 0;
+    padding: 18px 22px 0;
   }
 
   .onay-back-button {
     position: absolute;
-    left: 18px;
-    top: 26px;
+    left: 20px;
+    top: 14px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -258,7 +258,7 @@
 
   .onay-title {
     color: hsl(var(--onay-text));
-    font-size: 23px;
+    font-size: 20px;
     font-weight: 700;
     line-height: 1;
     letter-spacing: -0.02em;
@@ -266,52 +266,68 @@
 
   .onay-surface {
     position: relative;
-    height: calc(100% - 139px);
-    background: hsl(var(--onay-surface));
-    padding: 18px 16px 0;
+    height: calc(100% - 120px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: hsl(228 22% 94%);
+    border-radius: 28px 28px 0 0;
+    padding: 20px 14px 0;
+    border-radius: 28px 28px 0 0;
+    padding: 20px 14px 0;
   }
 
   .onay-day-pill-wrap {
     display: flex;
     justify-content: center;
-    margin-bottom: 18px;
+    margin-bottom: 14px;
   }
 
   .onay-day-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 112px;
-    height: 40px;
+    min-width: 92px;
+    height: 34px;
     border-radius: 999px;
-    border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(228 14% 88%);
     background: hsl(var(--card));
     color: hsl(var(--onay-text));
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 500;
-    box-shadow: 0 1px 2px hsl(var(--onay-shadow) / 0.06);
+    box-shadow: 0 1px 2px hsl(var(--onay-shadow) / 0.04);
   }
 
   .onay-list {
     display: grid;
-    gap: 16px;
-    padding-bottom: 192px;
+    gap: 12px;
+    padding-bottom: 200px;
   }
 
   .onay-ticket {
     display: flex;
     min-height: 164px;
     overflow: hidden;
-    border-radius: 20px;
+    border-radius: 16px;
     background: hsl(var(--onay-card));
-    box-shadow: 0 2px 10px hsl(var(--onay-shadow) / 0.05);
+    box-shadow: 0 1px 6px hsl(var(--onay-shadow) / 0.04);
   }
 
   .onay-ticket-strip {
     position: relative;
-    width: 54px;
-    flex: 0 0 54px;
-    background: linear-gradient(90deg, hsl(var(--onay-strip-main)) 0 74%, hsl(var(--onay-strip-edge)) 74% 100%);
+    width: 38px;
+    flex: 0 0 38px;
+    background: hsl(228 14% 92%);
+  }
+
+  .onay-ticket-strip::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3.5px;
+    background: hsl(352 72% 52%);
+    border-radius: 16px 0 0 16px;
   }
 
   .onay-ticket-strip::after {
@@ -321,7 +337,7 @@
     top: 0;
     bottom: 0;
     width: 1px;
-    background: hsl(0 0% 100% / 0.85);
+    background: hsl(0 0% 100% / 0.7);
   }
 
   .onay-ticket-brand {
@@ -330,87 +346,79 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: hsl(var(--onay-text));
-    font-size: 13px;
+    color: hsl(230 20% 28%);
+    font-size: 11px;
     font-weight: 900;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
     writing-mode: vertical-rl;
     transform: rotate(180deg);
   }
 
   .onay-ticket-body {
     flex: 1;
-    padding: 21px 22px 19px 16px;
+    padding: 18px 18px 16px 14px;
   }
 
   .onay-ticket-head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    margin-bottom: 15px;
+    margin-bottom: 14px;
   }
 
   .onay-ticket-type {
     color: hsl(var(--onay-text));
-    font-size: 20px;
-    font-weight: 800;
-    line-height: 1.05;
-    letter-spacing: -0.02em;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
   }
 
   .onay-ticket-city {
-    margin-top: 5px;
-    color: hsl(var(--onay-muted));
+    margin-top: 4px;
+    color: hsl(0 0% 62%);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
     line-height: 1;
-  }
-
-  .onay-stamp {
-    width: 52px;
-    height: 52px;
-    flex: 0 0 52px;
-    border-radius: 12px;
-    overflow: hidden;
   }
 
   .onay-ticket-rows {
     display: grid;
-    gap: 9px;
+    gap: 11px;
   }
 
   .onay-ticket-row {
     display: grid;
-    grid-template-columns: 108px 1fr;
+    grid-template-columns: 106px 1fr;
     align-items: center;
   }
 
   .onay-ticket-label {
-    color: hsl(var(--onay-text) / 0.78);
-    font-size: 14px;
-    font-weight: 500;
+    color: hsl(0 0% 42%);
+    font-size: 15px;
+    font-weight: 400;
     line-height: 1.15;
   }
 
   .onay-ticket-value {
     color: hsl(var(--onay-text));
-    font-size: 18px;
-    font-weight: 800;
+    font-size: 17px;
+    font-weight: 700;
     line-height: 1;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
   }
 
   .onay-route-inline {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
     min-width: 0;
   }
 
   .onay-route-id {
     color: hsl(var(--onay-text));
-    font-size: 18px;
-    font-weight: 800;
+    font-size: 17px;
+    font-weight: 700;
     line-height: 1;
   }
 
@@ -418,24 +426,25 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 98px;
-    height: 34px;
-    border-radius: 10px;
-    background: hsl(220 18% 95%);
+    min-width: 88px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid hsl(220 14% 89%);
+    background: hsl(220 18% 96%);
     color: hsl(var(--onay-text));
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 500;
-    letter-spacing: -0.01em;
+    letter-spacing: 0.02em;
   }
 
   .onay-banner {
     position: relative;
     display: flex;
-    height: 102px;
+    height: 96px;
     overflow: hidden;
-    border-radius: 18px;
-    background: linear-gradient(180deg, hsl(var(--onay-banner-red)) 0%, hsl(var(--onay-banner-red-dark)) 100%);
-    box-shadow: 0 2px 10px hsl(var(--onay-shadow) / 0.05);
+    border-radius: 16px;
+    background: linear-gradient(135deg, hsl(var(--onay-banner-red)) 0%, hsl(var(--onay-banner-red-dark)) 100%);
+    box-shadow: 0 1px 6px hsl(var(--onay-shadow) / 0.04);
   }
 
   .onay-banner-left {
@@ -541,15 +550,15 @@
   }
 
   .onay-bottom-sheet {
-    position: absolute;
-    right: 0;
+    position: sticky;
     bottom: 0;
-    left: 0;
+    margin: -170px -14px 0;
     height: 170px;
-    border-radius: 34px 34px 0 0;
+    border-radius: 30px 30px 0 0;
     background: hsl(var(--onay-bottom-card));
-    box-shadow: 0 -6px 18px hsl(var(--onay-shadow) / 0.05);
-    padding: 16px 18px 0;
+    box-shadow: 0 -4px 14px hsl(var(--onay-shadow) / 0.04);
+    padding: 14px 16px 0;
+    z-index: 2;
   }
 
   .onay-grabber {
