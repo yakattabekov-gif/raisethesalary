@@ -10,217 +10,327 @@ type Ticket = {
 };
 
 const tickets: Ticket[] = [
-  {
-    id: 1,
-    route: "141",
-    plate: "877GL02",
-    time: "29.03.26 13:25",
-    price: "120 ₸",
-    code: "E36F5",
-  },
-  {
-    id: 2,
-    route: "76",
-    plate: "305GA02",
-    time: "29.03.26 12:56",
-    price: "120 ₸",
-    code: "DF833",
-  },
+  { id: 1, route: "141", plate: "877GL02", time: "29.03.26 13:25", price: "120 ₸", code: "E36F5" },
+  { id: 2, route: "76", plate: "305GA02", time: "29.03.26 12:56", price: "120 ₸", code: "DF833" },
 ];
 
-const LocationArrow = () => (
-  <svg width="12" height="14" viewBox="0 0 12 14" fill="none" aria-hidden="true">
-    <path d="M10.56 1.15L8.24 11.4C8.06 12.18 7.32 12.56 6.67 12.24L4.16 10.98L2.89 13.39C2.71 13.74 2.21 13.72 2.05 13.35L1.18 11.26C1.09 11.06 1.1 10.82 1.22 10.63L2.68 8.39L0.45 7.27C0.08 7.08 0.11 6.55 0.51 6.42L10.1 0.29C10.53 0.15 10.66 0.7 10.56 1.15Z" fill="currentColor" />
-  </svg>
-);
-
-const SignalBars = () => (
-  <svg width="19" height="14" viewBox="0 0 19 14" fill="none" aria-hidden="true">
-    <rect x="0" y="7" width="3" height="7" rx="1.1" fill="currentColor" />
-    <rect x="5" y="5" width="3" height="9" rx="1.1" fill="currentColor" />
-    <rect x="10" y="3" width="3" height="11" rx="1.1" fill="currentColor" />
-    <rect x="15" y="1" width="3" height="13" rx="1.1" fill="currentColor" />
-  </svg>
-);
-
-const WifiIcon = () => (
-  <svg width="18" height="14" viewBox="0 0 18 14" fill="none" aria-hidden="true">
-    <path d="M9 10.8C9.83 10.8 10.5 11.47 10.5 12.3C10.5 13.13 9.83 13.8 9 13.8C8.17 13.8 7.5 13.13 7.5 12.3C7.5 11.47 8.17 10.8 9 10.8Z" fill="currentColor" />
-    <path d="M14.63 8.23C13.12 6.72 11.11 5.9 9 5.9C6.89 5.9 4.88 6.72 3.37 8.23" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    <path d="M17.05 5.48C14.85 3.28 11.98 2.07 9 2.07C6.02 2.07 3.15 3.28 0.95 5.48" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-  </svg>
-);
-
-const BatteryIcon = () => (
-  <svg width="27" height="14" viewBox="0 0 27 14" fill="none" aria-hidden="true">
-    <rect x="0.75" y="1" width="22.5" height="12" rx="3" stroke="currentColor" strokeWidth="1.5" />
-    <rect x="2.8" y="3.05" width="18.3" height="7.9" rx="1.8" fill="currentColor" />
-    <rect x="24.3" y="4.3" width="2" height="5.4" rx="1" fill="currentColor" />
-  </svg>
-);
+/* ── tiny inline SVGs ── */
 
 const TicketStamp = () => (
-  <svg className="onay-stamp" viewBox="0 0 52 52" fill="none" aria-hidden="true">
-    <rect width="52" height="52" rx="12" fill="hsl(226 43% 97%)" />
-    <path d="M2 13C12 11 21 13 26 18C31 23 39 25 50 22" stroke="hsl(235 28% 90%)" strokeWidth="1" />
-    <path d="M1 28C12 26 22 28 27 33C32 38 39 40 51 37" stroke="hsl(235 28% 90%)" strokeWidth="1" />
-    <path d="M8 1C13 9 14 18 12 26C10 34 11 43 16 51" stroke="hsl(235 28% 90%)" strokeWidth="1" />
-    <path d="M27 1C31 10 31 18 29 26C27 34 27 43 31 51" stroke="hsl(235 28% 90%)" strokeWidth="1" />
-    <path d="M0 25.5H19.8" stroke="hsl(41 100% 52%)" strokeWidth="4" strokeLinecap="round" />
-    <path d="M32.2 25.5H52" stroke="hsl(41 100% 52%)" strokeWidth="4" strokeLinecap="round" />
-    <circle cx="26" cy="26" r="9" fill="hsl(41 100% 52%)" />
-    <path d="M21.6 23.2C21.6 21.76 22.76 20.6 24.2 20.6H27.8C29.24 20.6 30.4 21.76 30.4 23.2V27.2C30.4 28.64 29.24 29.8 27.8 29.8H24.2C22.76 29.8 21.6 28.64 21.6 27.2V23.2Z" stroke="white" strokeWidth="1.6" />
-    <path d="M22.7 23.8H29.3" stroke="white" strokeWidth="1.4" strokeLinecap="round" />
-    <path d="M24.3 30.2V32.2" stroke="white" strokeWidth="1.4" strokeLinecap="round" />
-    <path d="M27.7 30.2V32.2" stroke="white" strokeWidth="1.4" strokeLinecap="round" />
-    <circle cx="23.9" cy="27" r="0.9" fill="white" />
-    <circle cx="28.1" cy="27" r="0.9" fill="white" />
+  <svg width="52" height="52" viewBox="0 0 52 52" fill="none" style={{ width: 52, height: 52, flexShrink: 0 }}>
+    <rect width="52" height="52" rx="12" fill="#f0f1f6" />
+    <path d="M2 13C12 11 21 13 26 18C31 23 39 25 50 22" stroke="#dddee6" strokeWidth="1" />
+    <path d="M1 28C12 26 22 28 27 33C32 38 39 40 51 37" stroke="#dddee6" strokeWidth="1" />
+    <path d="M8 1C13 9 14 18 12 26C10 34 11 43 16 51" stroke="#dddee6" strokeWidth="1" />
+    <path d="M27 1C31 10 31 18 29 26C27 34 27 43 31 51" stroke="#dddee6" strokeWidth="1" />
+    <line x1="0" y1="26" x2="18" y2="26" stroke="#F5A623" strokeWidth="3.5" strokeLinecap="round" />
+    <line x1="34" y1="26" x2="52" y2="26" stroke="#F5A623" strokeWidth="3.5" strokeLinecap="round" />
+    <circle cx="26" cy="26" r="9" fill="#F5A623" />
+    <rect x="21.5" y="20.5" width="9" height="8" rx="2" stroke="white" strokeWidth="1.5" />
+    <line x1="22.5" y1="24" x2="29.5" y2="24" stroke="white" strokeWidth="1.2" />
+    <line x1="24" y1="29" x2="24" y2="31.5" stroke="white" strokeWidth="1.3" strokeLinecap="round" />
+    <line x1="28" y1="29" x2="28" y2="31.5" stroke="white" strokeWidth="1.3" strokeLinecap="round" />
+    <circle cx="24" cy="27" r="0.9" fill="white" />
+    <circle cx="28" cy="27" r="0.9" fill="white" />
   </svg>
 );
 
-const RouteBusIcon = () => (
-  <svg width="19" height="19" viewBox="0 0 19 19" fill="none" aria-hidden="true">
-    <path d="M4.5 2.8C4.5 2.03 5.13 1.4 5.9 1.4H13.1C13.87 1.4 14.5 2.03 14.5 2.8V11.7C14.5 12.47 13.87 13.1 13.1 13.1H5.9C5.13 13.1 4.5 12.47 4.5 11.7V2.8Z" stroke="currentColor" strokeWidth="1.8" />
-    <path d="M6.1 4.2H8.7V7H6.1V4.2Z" fill="currentColor" />
-    <path d="M10.3 4.2H12.9V7H10.3V4.2Z" fill="currentColor" />
-    <path d="M3.6 8.8H15.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    <path d="M6.25 14.4V16.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    <path d="M12.75 14.4V16.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    <circle cx="6.25" cy="12.3" r="1.35" fill="currentColor" />
-    <circle cx="12.75" cy="12.3" r="1.35" fill="currentColor" />
+const BusIcon = () => (
+  <svg width="16" height="18" viewBox="0 0 16 18" fill="none" style={{ width: 16, height: 18 }}>
+    <rect x="2" y="1" width="12" height="11" rx="2.5" stroke="#1a1a1a" strokeWidth="1.5" />
+    <rect x="3.8" y="3" width="3.6" height="3" rx="0.6" fill="#1a1a1a" />
+    <rect x="8.6" y="3" width="3.6" height="3" rx="0.6" fill="#1a1a1a" />
+    <line x1="1" y1="8" x2="15" y2="8" stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round" />
+    <circle cx="5" cy="11" r="1" fill="#1a1a1a" />
+    <circle cx="11" cy="11" r="1" fill="#1a1a1a" />
+    <line x1="5" y1="13" x2="5" y2="15.5" stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round" />
+    <line x1="11" y1="13" x2="11" y2="15.5" stroke="#1a1a1a" strokeWidth="1.5" strokeLinecap="round" />
   </svg>
 );
 
+/* ── Ticket card ── */
 const TicketCard = ({ ticket }: { ticket: Ticket }) => (
-  <article className="onay-ticket">
-    <div className="onay-ticket-strip">
-      <span className="onay-ticket-brand">ONAY!</span>
+  <div style={{
+    display: "flex",
+    borderRadius: 16,
+    overflow: "hidden",
+    background: "white",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+  }}>
+    {/* Left strip: red edge + gray ONAY */}
+    <div style={{ display: "flex", flexShrink: 0 }}>
+      <div style={{ width: 3.5, background: "#d93843", borderRadius: "16px 0 0 16px" }} />
+      <div style={{
+        width: 32,
+        background: "#e8e9ef",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        position: "relative",
+      }}>
+        <span style={{
+          writingMode: "vertical-rl" as const,
+          transform: "rotate(180deg)",
+          fontSize: 11,
+          fontWeight: 900,
+          color: "#2e3044",
+          letterSpacing: "0.04em",
+        }}>ONAY!</span>
+      </div>
     </div>
 
-    <div className="onay-ticket-body">
-      <div className="onay-ticket-head">
+    {/* Card body */}
+    <div style={{ flex: 1, padding: "16px 16px 14px 14px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
         <div>
-          <h2 className="onay-ticket-type">Автобус</h2>
-          <p className="onay-ticket-city">Алматы</p>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1a2e", lineHeight: 1.1 }}>Автобус</div>
+          <div style={{ fontSize: 14, color: "#9a9a9a", marginTop: 3, fontWeight: 400 }}>Алматы</div>
         </div>
         <TicketStamp />
       </div>
 
-      <div className="onay-ticket-rows">
-        <div className="onay-ticket-row">
-          <span className="onay-ticket-label">Маршрут:</span>
-          <div className="onay-route-inline">
-            <div className="text-[hsl(var(--onay-text))]">
-              <RouteBusIcon />
-            </div>
-            <span className="onay-route-id">{ticket.route}</span>
-            <span className="onay-route-badge">{ticket.plate}</span>
+      {/* Details rows */}
+      <div style={{ display: "grid", gap: 10 }}>
+        <Row label="Маршрут:">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <BusIcon />
+            <span style={{ fontSize: 17, fontWeight: 700, color: "#1a1a2e" }}>{ticket.route}</span>
+            <span style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "#1a1a2e",
+              background: "#f0f1f4",
+              border: "1px solid #e4e5ea",
+              borderRadius: 7,
+              padding: "3px 10px",
+              letterSpacing: "0.02em",
+            }}>{ticket.plate}</span>
           </div>
-        </div>
-
-        <div className="onay-ticket-row">
-          <span className="onay-ticket-label">Время:</span>
-          <span className="onay-ticket-value">{ticket.time}</span>
-        </div>
-
-        <div className="onay-ticket-row">
-          <span className="onay-ticket-label">Цена:</span>
-          <span className="onay-ticket-value">{ticket.price}</span>
-        </div>
-
-        <div className="onay-ticket-row">
-          <span className="onay-ticket-label">Код проверки:</span>
-          <span className="onay-ticket-value">{ticket.code}</span>
-        </div>
+        </Row>
+        <Row label="Время:"><Val>{ticket.time}</Val></Row>
+        <Row label="Цена:"><Val>{ticket.price}</Val></Row>
+        <Row label="Код проверки:"><Val>{ticket.code}</Val></Row>
       </div>
-    </div>
-  </article>
-);
-
-const ColaBanner = () => (
-  <section className="onay-banner" aria-label="Advertisement banner">
-    <div className="onay-banner-left">
-      <div className="onay-bottle" />
-      <div className="onay-banner-kz">
-        СӘТІ
-        <br />
-        КЕЛДІ
-      </div>
-    </div>
-
-    <div className="onay-banner-right">
-      <div className="onay-banner-over">САМОЕ</div>
-      <div className="onay-banner-main">
-        ВРЕМЯ ДЛЯ
-      </div>
-      <div className="onay-banner-script">Coca-Cola</div>
-      <div className="onay-banner-footnote">
-        ТАУАР ДЕКЛАРАЦИЯЛАНҒАН ЖӘ,
-        <br />
-        ТОВАР ЗАДЕКЛАРИРОВАН.
-      </div>
-    </div>
-  </section>
-);
-
-const BottomFoodSheet = () => (
-  <div className="onay-bottom-sheet" aria-hidden="true">
-    <div className="onay-grabber" />
-    <div className="onay-food-banner">
-      <div className="onay-food-copy">
-        ДОМ
-        <br />
-        ВСЕГДА
-        <br />
-        РЯДОМ.
-      </div>
-      <div className="onay-food-visual" />
     </div>
   </div>
 );
 
+const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div style={{ display: "grid", gridTemplateColumns: "105px 1fr", alignItems: "center" }}>
+    <span style={{ fontSize: 14, color: "#6b6b6b", fontWeight: 400 }}>{label}</span>
+    <div>{children}</div>
+  </div>
+);
+
+const Val = ({ children }: { children: React.ReactNode }) => (
+  <span style={{ fontSize: 17, fontWeight: 700, color: "#1a1a2e", letterSpacing: "-0.01em" }}>{children}</span>
+);
+
+/* ── Ad banner ── */
+const ColaBanner = () => (
+  <div style={{
+    display: "flex",
+    height: 94,
+    borderRadius: 16,
+    overflow: "hidden",
+    background: "linear-gradient(135deg, #d72638 0%, #b71c2c 100%)",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+  }}>
+    <div style={{
+      width: 110,
+      flexShrink: 0,
+      position: "relative",
+      background: "linear-gradient(90deg, #c62828 0%, #b71c1c 100%)",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "flex-end",
+      padding: "0 14px 10px",
+    }}>
+      {/* Simplified bottle shape */}
+      <div style={{
+        position: "absolute",
+        left: "50%",
+        top: -2,
+        transform: "translateX(-50%)",
+        width: 40,
+        height: 100,
+        borderRadius: "10px 10px 12px 12px",
+        background: "linear-gradient(90deg, #4a2410 0%, #6b3a20 30%, #4a2410 70%, #6b3a20 100%)",
+        opacity: 0.7,
+      }}>
+        <div style={{
+          position: "absolute",
+          left: "50%",
+          top: 16,
+          transform: "translateX(-50%)",
+          width: 32,
+          height: 42,
+          borderRadius: 10,
+          background: "rgba(255,255,255,0.85)",
+        }} />
+      </div>
+      <div style={{ color: "white", fontWeight: 800, fontSize: 16, lineHeight: 0.92, zIndex: 1, letterSpacing: "-0.02em" }}>
+        СӘТІ<br />КЕЛДІ
+      </div>
+    </div>
+    <div style={{
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      alignItems: "flex-end",
+      padding: "8px 14px",
+      color: "white",
+      textAlign: "right",
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 900 }}>САМОЕ</div>
+      <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 0.9, textTransform: "uppercase", letterSpacing: "-0.03em" }}>ВРЕМЯ ДЛЯ</div>
+      <div style={{ fontSize: 22, fontWeight: 700, fontStyle: "italic", fontFamily: "Georgia, serif", lineHeight: 1.1, marginTop: 2 }}>Coca-Cola</div>
+      <div style={{ fontSize: 6, color: "rgba(255,255,255,0.55)", marginTop: 4, lineHeight: 1.2 }}>
+        ТАУАР ДЕКЛАРАЦИЯЛАНҒАН ЖӘ,<br />ТОВАР ЗАДЕКЛАРИРОВАН.
+      </div>
+    </div>
+  </div>
+);
+
+/* ── Bottom sheet with food ad ── */
+const BottomSheet = () => (
+  <div style={{
+    borderRadius: "28px 28px 0 0",
+    background: "white",
+    boxShadow: "0 -3px 12px rgba(0,0,0,0.03)",
+    padding: "14px 16px 0",
+    marginTop: 16,
+  }}>
+    <div style={{ width: 100, height: 5, borderRadius: 999, background: "#ccccd0", margin: "0 auto 16px" }} />
+    <div style={{
+      display: "flex",
+      height: 100,
+      borderRadius: 16,
+      overflow: "hidden",
+      background: "#d32f2f",
+    }}>
+      <div style={{
+        width: 100,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "flex-end",
+        padding: "0 12px 12px",
+        color: "white",
+        fontSize: 14,
+        fontWeight: 800,
+        lineHeight: 0.95,
+        textTransform: "uppercase",
+        background: "linear-gradient(180deg, #d32f2f 0%, #b71c1c 100%)",
+      }}>
+        ДОМ<br />ВСЕГДА<br />РЯДОМ.<br />АРОМАТНЫЙ
+      </div>
+      <div style={{
+        flex: 1,
+        background: "linear-gradient(135deg, #e8c170 0%, #c9a55a 30%, #8b6a3a 60%, #e8c170 100%)",
+      }} />
+    </div>
+  </div>
+);
+
+/* ── Main page ── */
 const Index = () => {
   return (
-    <main className="onay-stage">
-      <section className="onay-phone" aria-label="ONAY mobile ticket screen mockup">
-        <header className="onay-top">
-          <div className="onay-logo-pill">ONAY!</div>
+    <main style={{
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20,
+      background: "radial-gradient(ellipse at 10% 20%, #4a5e3a 0%, transparent 50%), linear-gradient(180deg, #5a4e3c 0%, #2e2820 100%)",
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif",
+    }}>
+      {/* Phone frame */}
+      <div style={{
+        width: 390,
+        height: 844,
+        borderRadius: 44,
+        overflow: "hidden",
+        background: "white",
+        boxShadow: "0 20px 60px rgba(20,20,40,0.35), inset 0 1px 0 rgba(255,255,255,0.4)",
+        display: "flex",
+        flexDirection: "column",
+      }}>
+        {/* Status bar */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 28px 0", background: "white" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 16, fontWeight: 600, color: "#1a1a2e" }}>
+            <span>16:51</span>
+            <svg width="10" height="12" viewBox="0 0 10 12" fill="#1a1a2e"><path d="M8.5 1L6.8 9.6c-.1.5-.5.7-.9.5L3.5 9l-1 1.9c-.1.3-.4.2-.5 0L1.2 9.3c-.1-.1-.1-.3 0-.4l1.2-1.8L.7 6.2c-.3-.1-.2-.5.1-.6L8.1.3c.3-.1.5.2.4.7z" /></svg>
+          </div>
+          <div style={{
+            background: "#F5A623",
+            color: "#1a1a2e",
+            fontSize: 12,
+            fontWeight: 900,
+            padding: "4px 14px",
+            borderRadius: 999,
+          }}>ONAY!</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, color: "#1a1a2e" }}>
+            <svg width="16" height="12" viewBox="0 0 16 12" fill="#1a1a2e">
+              <rect x="0" y="6" width="2.5" height="6" rx="0.8" />
+              <rect x="4" y="4" width="2.5" height="8" rx="0.8" />
+              <rect x="8" y="2" width="2.5" height="10" rx="0.8" />
+              <rect x="12" y="0" width="2.5" height="12" rx="0.8" />
+            </svg>
+            <svg width="15" height="11" viewBox="0 0 15 11" fill="none">
+              <path d="M7.5 8.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3z" fill="#1a1a2e" />
+              <path d="M12.3 6.5C11 5.2 9.3 4.5 7.5 4.5S4 5.2 2.7 6.5" stroke="#1a1a2e" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M14.5 4C12.6 2.1 10.1 1 7.5 1S2.4 2.1.5 4" stroke="#1a1a2e" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <svg width="22" height="11" viewBox="0 0 22 11" fill="none">
+              <rect x="0.5" y="0.5" width="18" height="10" rx="2.5" stroke="#1a1a2e" strokeWidth="1" />
+              <rect x="2" y="2" width="15" height="7" rx="1.5" fill="#1a1a2e" />
+              <rect x="19.5" y="3" width="1.5" height="5" rx="0.5" fill="#1a1a2e" />
+            </svg>
+          </div>
+        </div>
 
-          <div className="onay-status-bar">
-            <div className="onay-status-left text-[hsl(var(--onay-text))]">
-              <span>16:51</span>
-              <LocationArrow />
-            </div>
+        {/* Navigation */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "14px 20px 16px", background: "white", position: "relative" }}>
+          <button style={{ position: "absolute", left: 20, background: "none", border: "none", cursor: "pointer", color: "#1a1a2e" }}>
+            <ArrowLeft size={28} strokeWidth={2.2} />
+          </button>
+          <h1 style={{ fontSize: 20, fontWeight: 700, color: "#1a1a2e", margin: 0, letterSpacing: "-0.02em" }}>Мои билеты</h1>
+        </div>
 
-            <div className="onay-status-right text-[hsl(var(--onay-text))]">
-              <SignalBars />
-              <WifiIcon />
-              <BatteryIcon />
-            </div>
+        {/* Scrollable content */}
+        <div style={{
+          flex: 1,
+          background: "#edeef3",
+          borderRadius: "26px 26px 0 0",
+          overflowY: "auto",
+          padding: "18px 14px 0",
+        }}>
+          {/* Day pill */}
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+            <div style={{
+              fontSize: 14,
+              fontWeight: 500,
+              color: "#1a1a2e",
+              background: "white",
+              border: "1px solid #e0e1e6",
+              borderRadius: 999,
+              padding: "6px 22px",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+            }}>Вчера</div>
           </div>
 
-          <div className="onay-nav">
-            <button className="onay-back-button" aria-label="Назад">
-              <ArrowLeft size={33} strokeWidth={2.1} />
-            </button>
-            <h1 className="onay-title">Мои билеты</h1>
-          </div>
-        </header>
-
-        <section className="onay-surface">
-          <div className="onay-day-pill-wrap">
-            <div className="onay-day-pill">Вчера</div>
-          </div>
-
-          <div className="onay-list">
+          {/* Cards */}
+          <div style={{ display: "grid", gap: 12, paddingBottom: 20 }}>
             <TicketCard ticket={tickets[0]} />
             <ColaBanner />
             <TicketCard ticket={tickets[1]} />
           </div>
 
-          <BottomFoodSheet />
-        </section>
-      </section>
+          <BottomSheet />
+        </div>
+      </div>
     </main>
   );
 };
