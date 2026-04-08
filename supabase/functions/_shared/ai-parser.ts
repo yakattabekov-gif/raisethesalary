@@ -365,7 +365,10 @@ export async function parseWithAI(
   console.log(`[${VERSION}] Using AI provider: ${provider}`);
 
   const customPrompt = settings.ai_system_prompt;
-  const systemPrompt = (customPrompt && customPrompt.trim().length > 50) ? customPrompt : getBuiltInPrompt();
+  const basePrompt = getBuiltInPrompt();
+  const systemPrompt = (customPrompt && customPrompt.trim().length > 10)
+    ? `${basePrompt}\n\n# 📌 ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${customPrompt.trim()}`
+    : basePrompt;
 
   // === STAGE 1: Strict parser ===
   console.log(`[${VERSION}] Stage 1: Strict parser for task ${taskId}`);
