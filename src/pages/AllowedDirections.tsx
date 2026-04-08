@@ -306,6 +306,33 @@ const AllowedDirections = () => {
               </Button>
             </div>
 
+            {/* Add by region */}
+            <div className="flex gap-2 pt-2 border-t border-border items-end">
+              <div className="flex-1">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Добавить по области</label>
+                <Select value={selectedRegion} onValueChange={setSelectedRegion}>
+                  <SelectTrigger className="rounded-xl text-sm h-9">
+                    <SelectValue placeholder={loadingRegions ? "Загрузка..." : "Выберите область"} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {regions.map((r) => (
+                      <SelectItem key={r} value={r} className="text-sm">{r}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={handleAddByRegion}
+                disabled={addingRegion || !selectedRegion}
+                size="sm"
+                variant="outline"
+                className="rounded-xl gap-1 h-9"
+              >
+                <Globe className="w-4 h-4" />
+                {addingRegion ? "Добавление..." : "Добавить"}
+              </Button>
+            </div>
+
             {/* Add child within modal */}
             <div className="flex gap-2 pt-2 border-t border-border">
               <CityAutocomplete
