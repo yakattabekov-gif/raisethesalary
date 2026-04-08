@@ -34,7 +34,47 @@ const AllowedDirections = () => {
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [newChild, setNewChild] = useState("");
   const [importing, setImporting] = useState(false);
+  const [addingRegion, setAddingRegion] = useState(false);
+  const [regions, setRegions] = useState<string[]>([]);
+  const [selectedRegion, setSelectedRegion] = useState<string>("");
+  const [loadingRegions, setLoadingRegions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load regions when a city dialog is opened
+  useEffect(() => {
+    if (selectedCity && regions.length === 0 && !loadingRegions) {
+      setLoadingRegions(true);
+      supabase.functions.invoke("sync-cities", { body: { mode: "regions" } })
+        .then(({ data, error }) => {
+          if (!error && data?.regions) {
+            setRegions(data.regions);
+          }
+        })
+        .finally(() => setLoadingRegions(false));
+    }
+  }, [selectedCity]);
+
+  const handleAddByRegion = async () => {
+    if (!selectedCity || !selectedRegion) return toast.error("Выберите область");
+    setAddingRegion(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-cities", {
+        body: { mode: "directions_by_region", parent_city: selectedCity, region: selectedRegion },
+      });
+      if (error) throw error;
+      const result = data as any;
+      if (result?.error) throw new Error(result.error);
+      toast.success(`Добавлено ${result.added} направлений из области "${selectedRegion}" (пропущено: ${result.skipped})`);
+      // Refresh directions
+      bulkAdd.reset();
+      window.location.reload();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e.message || "неизвестная ошибка"));
+    } finally {
+      setAddingRegion(false);
+      setSelectedRegion("");
+    }
+  };
 
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
