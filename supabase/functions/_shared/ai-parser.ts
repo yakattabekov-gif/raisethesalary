@@ -192,6 +192,10 @@ function parseAIContent(aiContent: string): any {
       aiResult = { actions: [parsed] };
     }
   }
+  // Preserve confidence and needs_review from AI response
+  if (aiResult.confidence !== undefined) {
+    console.log(`[${VERSION}] AI confidence: ${aiResult.confidence}, needs_review: ${aiResult.needs_review}`);
+  }
   return aiResult;
 }
 
