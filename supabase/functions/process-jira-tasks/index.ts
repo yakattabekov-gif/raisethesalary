@@ -124,12 +124,23 @@ async function executeAllActions(
   let anySuccess = false;
 
   for (const actionItem of aiResult.actions) {
+    // Skip actions without invoices (except change_act_number which uses ftl_order_ids)
+    if (actionItem.action !== "change_act_number" && (!actionItem.invoices || actionItem.invoices.length === 0)) {
+      console.log(`[${VERSION}] Skipping action "${actionItem.action}" — no invoices provided`);
+      allSuccess = false;
+      allCommentLines.push(`❌ ${actionItem.action}: нет номеров накладных`);
+      continue;
+    }
+
     const { results, commentLines } = await dispatchAction(actionItem, supabase, settings, taskId, dryRun, cancelledInvoices);
     allResults.push(...results);
     allCommentLines.push(...commentLines);
     if (!results.every((r: any) => r.success)) allSuccess = false;
     if (results.some((r: any) => r.success)) anySuccess = true;
   }
+
+  // If no results at all, mark as not successful
+  if (allResults.length === 0) allSuccess = false;
 
   return { allResults, allCommentLines, allSuccess, anySuccess };
 }
@@ -307,10 +318,10 @@ serve(async (req) => {
       }
     }
 
-    // === Retry pending tasks from DB ===
+    // === Retry pending tasks from DB (including those without ai_response — re-parse them) ===
     const { data: pendingRetries } = await supabase
       .from("processed_tasks").select("*")
-      .eq("status", "pending").not("ai_response", "is", null).limit(10);
+      .eq("status", "pending").limit(10);
 
     if (pendingRetries && pendingRetries.length > 0) {
       console.log(`[${VERSION}] Found ${pendingRetries.length} pending retry tasks`);
@@ -322,13 +333,25 @@ serve(async (req) => {
             .update({ status: "processing", retry_count: task.retry_count + 1 })
             .eq("id", taskId);
 
-          const aiResult = task.ai_response as any;
-          if (!aiResult?.actions || aiResult.actions.length === 0) {
-            await supabase.from("processed_tasks")
-              .update({ status: "ignored", execution_result: { message: "Нет действий для повтора" } })
-              .eq("id", taskId);
-            processedCount++;
-            continue;
+          let aiResult = task.ai_response as any;
+
+          // If no ai_response yet, re-parse with AI
+          if (!aiResult || !aiResult.actions || aiResult.actions.length === 0) {
+            if (aiEnabled) {
+              const summary = task.jira_summary || "";
+              const description = task.jira_description || "";
+              aiResult = await parseWithAI(settings, summary, description, supabase, taskId);
+              const primaryAction = aiResult.actions?.[0]?.action || null;
+              await supabase.from("processed_tasks").update({ ai_response: aiResult, action: primaryAction }).eq("id", taskId);
+            }
+
+            if (!aiResult?.actions || aiResult.actions.length === 0) {
+              await supabase.from("processed_tasks")
+                .update({ status: "ignored", execution_result: { message: "Нет действий для повтора" } })
+                .eq("id", taskId);
+              processedCount++;
+              continue;
+            }
           }
 
           const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
@@ -338,6 +361,13 @@ serve(async (req) => {
 
           if (anySuccess) {
             await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines, task.jira_summary || "", task.jira_description || "");
+          }
+
+          // Transition Jira if all success
+          if (!dryRun && allSuccess) {
+            await transitionJiraIssue(settings, jiraAuth, issueKey);
+            await delay(3000);
+            await transitionJiraIssue(settings, jiraAuth, issueKey);
           }
 
           processedCount++;
