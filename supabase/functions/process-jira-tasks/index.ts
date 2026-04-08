@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
 import { VERSION, corsHeaders, delay, extractTextFromADF } from "../_shared/helpers.ts";
 import { sendTelegramNotification } from "../_shared/telegram.ts";
-import { fetchJiraComments, addJiraComment, transitionJiraIssue } from "../_shared/jira.ts";
+import { fetchJiraComments, transitionJiraIssue } from "../_shared/jira.ts";
 import { parseWithAI } from "../_shared/ai-parser.ts";
 import { executeCancelOrders } from "../_shared/executor-cancel.ts";
 import { executeRestoreOrder } from "../_shared/executor-restore.ts";
@@ -272,17 +272,9 @@ serve(async (req) => {
         await supabase.from("processed_tasks").update({ ai_response: aiResult, action: primaryAction }).eq("id", taskId);
 
         if (!aiResult.actions || aiResult.actions.length === 0) {
-          if (aiResult.needs_invoice) {
-            await addJiraComment(settings, jiraAuth, issueKey,
-              `⚠️ Номер накладной не найден в текстовом формате. Пожалуйста, укажите номер накладной текстом в комментарии.`);
-            await supabase.from("processed_tasks")
-              .update({ status: "waiting_for_info", execution_result: { message: "Ожидание номера накладной" } })
-              .eq("id", taskId);
-          } else {
-            await supabase.from("processed_tasks")
-              .update({ status: "ignored", execution_result: { message: "Заявка не содержит поддерживаемых действий" } })
-              .eq("id", taskId);
-          }
+          await supabase.from("processed_tasks")
+            .update({ status: "ignored", execution_result: { message: aiResult.needs_invoice ? "Номер накладной не найден" : "Заявка не содержит поддерживаемых действий" } })
+            .eq("id", taskId);
           processedCount++;
           continue;
         }
