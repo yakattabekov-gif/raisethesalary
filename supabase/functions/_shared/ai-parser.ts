@@ -476,7 +476,7 @@ function getBuiltInPrompt(): string {
 ═══════════════════════════════════════
 1. ОТМЕНА ЗАКАЗА (action: "cancel") — "отменить", "отмена заказа", "аннулировать"
 2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — изменить адрес доставки ПОЛУЧАТЕЛЯ
-3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — изменить ФИО/телефон ПОЛУЧАТЕЛЯ
+3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — изменить ФИО/телефон ПОЛУЧАТЕЛЯ, "добавить доп номер получателя", "изменить контактный номер"
 4. СМЕНА ОПЛАТЫ (action: "update_payment") — изменить способ/тип оплаты, ВНЕСТИ СУММУ, убрать/добавить НП
 5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — изменить ГОРОД НАЗНАЧЕНИЯ
 6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — авто/авиа
@@ -573,6 +573,17 @@ change_sender_direction с данными (НЕ создавай отдельн�
 
 Восстановление заказа:
 {"actions": [{"action": "restore_order", "invoices": ["KXT110098207"]}], "confidence": 0.95, "needs_review": false}
+
+Добавить доп номер получателя:
+Текст: "SLQ0204260248 добавить доп номер получателя +7 777 001 0685"
+{"actions": [{"action": "update_receiver", "invoices": ["SLQ0204260248"], "address": null, "receiver": {"full_name": null, "phone": null, "additional_phone": "+77770010685", "entity": null}}], "confidence": 0.95, "needs_review": false}
+
+Смена направления с новым адресом (2 действия):
+Текст: "SP00516751 поменять направление с Алматы на Павлодар, ул. Якова Геринга, дом 13, кв. 78"
+{"actions": [
+  {"action": "change_direction", "invoices": ["SP00516751"], "city": "Павлодар"},
+  {"action": "update_receiver", "invoices": ["SP00516751"], "address": {"city": "Павлодар", "street": "Якова Геринга", "house": "13", "apartment": "78", "full_address": "г. Павлодар, ул. Якова Геринга, 13, кв. 78"}, "receiver": null}
+], "confidence": 0.8, "needs_review": false}
 
 ═══════════════════════════════════════
 📤 ФОРМАТ ОТВЕТА — СТРОГО JSON:
