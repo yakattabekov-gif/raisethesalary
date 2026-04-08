@@ -25,6 +25,7 @@ const mainNavItems = [
   { to: "/directions", icon: MapPin, label: "Направления" },
   { to: "/endpoints", icon: SlidersHorizontal, label: "Поля" },
   { to: "/cities", icon: Building2, label: "Города" },
+  { to: "/warehouses", icon: Building2, label: "Склады" },
   { to: "/notes", icon: StickyNote, label: "Заметки" },
   { to: "/messenger", icon: MessageCircle, label: "Мессенджер" },
 ];
