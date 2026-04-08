@@ -1,10 +1,11 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useAllowedDirections, useAddDirection, useDeleteDirection, useBulkAddDirections, useDeleteDirectionsByParent } from "@/hooks/useAllowedDirections";
 import { useSparkCities } from "@/hooks/useSparkCities";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import CityAutocomplete from "@/components/CityAutocomplete";
 import { toast } from "sonner";
-import { Plus, Trash2, MapPin, Upload } from "lucide-react";
+import { Plus, Trash2, MapPin, Upload, Globe } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   Dialog,
@@ -13,6 +14,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const AllowedDirections = () => {
   const { data: directions, isLoading } = useAllowedDirections();
