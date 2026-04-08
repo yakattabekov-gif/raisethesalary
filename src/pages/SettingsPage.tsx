@@ -8,12 +8,19 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Save, Play, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const FEATURE_TOGGLES = [
   { key: "feature_change_sender_direction", label: "Смена направления отправителя", desc: "Обработка заявок на изменение направления" },
   { key: "feature_change_shipment_type", label: "Смена типа отправления", desc: "Обработка заявок на изменение типа" },
   { key: "feature_update_receiver", label: "Обновление получателя", desc: "Обработка заявок на обновление данных получателя" },
   { key: "feature_change_act_number", label: "Смена номера АВР (ФТЛ)", desc: "Обработка заявок на изменение номера АВР для ФТЛ заказов" },
+];
+
+const AI_PROVIDERS = [
+  { value: "openai", label: "OpenAI (GPT-4o-mini)" },
+  { value: "claude", label: "Claude (Sonnet 4)" },
+  { value: "lovable", label: "Lovable AI (Gemini 2.5 Flash)" },
 ];
 
 const SettingsPage = () => {
@@ -41,6 +48,16 @@ const SettingsPage = () => {
     try {
       await updateSetting.mutateAsync({ key, value: formValues[key] });
       toast.success("Сохранено");
+    } catch {
+      toast.error("Ошибка сохранения");
+    }
+  };
+
+  const handleProviderChange = async (value: string) => {
+    setFormValues((prev) => ({ ...prev, ai_provider: value }));
+    try {
+      await updateSetting.mutateAsync({ key: "ai_provider", value });
+      toast.success(`AI провайдер: ${AI_PROVIDERS.find(p => p.value === value)?.label}`);
     } catch {
       toast.error("Ошибка сохранения");
     }
@@ -93,6 +110,8 @@ const SettingsPage = () => {
       </div>
     </div>
   );
+
+  const currentProvider = formValues.ai_provider || "openai";
 
   return (
     <div className="space-y-8 max-w-3xl">
@@ -222,10 +241,35 @@ const SettingsPage = () => {
         {renderField("telegram_chat_ids", "Дополнительные Chat ID (через запятую)")}
       </section>
 
-      {/* AI */}
+      {/* AI Provider */}
       <section className="bg-card rounded-2xl border border-border p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-foreground">AI (OpenAI)</h2>
-        {renderField("openai_api_key", "API Key", "password")}
+        <h2 className="text-sm font-semibold text-foreground">AI Провайдер</h2>
+        <p className="text-xs text-muted-foreground">
+          Выберите AI-модель для парсинга заявок. Lovable AI не требует API ключа.
+        </p>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">Провайдер</Label>
+            <Select value={currentProvider} onValueChange={handleProviderChange}>
+              <SelectTrigger className="rounded-xl">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AI_PROVIDERS.map(p => (
+                  <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {currentProvider === "openai" && renderField("openai_api_key", "OpenAI API Key", "password")}
+          {currentProvider === "claude" && renderField("claude_api_key", "Claude API Key", "password")}
+          {currentProvider === "lovable" && (
+            <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl p-3">
+              ✅ Lovable AI настроен автоматически. API ключ не требуется.
+            </p>
+          )}
+        </div>
       </section>
     </div>
   );
