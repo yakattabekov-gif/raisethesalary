@@ -292,15 +292,12 @@ serve(async (req) => {
         const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
         await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
-        if (anySuccess && allCommentLines.length > 0) {
-          await addJiraComment(settings, jiraAuth, issueKey,
-            `${dryRun ? "🔸 DRY-RUN\n" : ""}Результат обработки:\n${allCommentLines.join("\n")}`);
-        }
-
+        // Send changes to Telegram (not to Jira comments)
         if (!dryRun && anySuccess) {
           await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines, summary, description);
         }
 
+        // Transition Jira to Done without adding a comment
         if (!dryRun && allSuccess) {
           await transitionJiraIssue(settings, jiraAuth, issueKey);
           await delay(3000);
@@ -310,7 +307,7 @@ serve(async (req) => {
         processedCount++;
       } catch (taskError: any) {
         console.error(`Error processing ${issueKey}:`, taskError);
-        await supabase.from("processed_tasks").update({ status: "error", execution_result: { error: taskError.message } }).eq("id", taskId);
+        await supabase.from("processed_tasks").update({ status: "ignored", execution_result: { error: taskError.message } }).eq("id", taskId);
         await supabase.from("execution_logs").insert({
           task_id: taskId, action: "process_error", step: "main_loop",
           success: false, error_message: taskError.message,
@@ -347,14 +344,6 @@ serve(async (req) => {
           const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
           await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
-          if (!dryRun && allCommentLines.length > 0) {
-            try {
-              await addJiraComment(settings, jiraAuth, issueKey, `🔄 Повторная обработка:\n${allCommentLines.join("\n")}`);
-            } catch (e) {
-              console.error(`[${VERSION}] Failed to add retry comment to ${issueKey}:`, e);
-            }
-          }
-
           if (anySuccess) {
             await sendTelegramNotification(issueKey, settings.jira_base_url || "", allResults, allCommentLines, task.jira_summary || "", task.jira_description || "");
           }
@@ -364,7 +353,7 @@ serve(async (req) => {
         } catch (taskError: any) {
           console.error(`[${VERSION}] Retry task ${issueKey} error:`, taskError);
           await supabase.from("processed_tasks")
-            .update({ status: "error", execution_result: { error: taskError.message } })
+            .update({ status: "ignored", execution_result: { error: taskError.message } })
             .eq("id", taskId);
         }
       }
