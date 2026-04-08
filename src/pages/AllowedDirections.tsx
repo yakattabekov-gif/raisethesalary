@@ -29,6 +29,7 @@ const AllowedDirections = () => {
   const deleteDirection = useDeleteDirection();
   const bulkAdd = useBulkAddDirections();
   const deleteByParent = useDeleteDirectionsByParent();
+  const qc = useQueryClient();
 
   const [parentCity, setParentCity] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
@@ -66,8 +67,7 @@ const AllowedDirections = () => {
       if (result?.error) throw new Error(result.error);
       toast.success(`Добавлено ${result.added} направлений из области "${selectedRegion}" (пропущено: ${result.skipped})`);
       // Refresh directions
-      bulkAdd.reset();
-      window.location.reload();
+      qc.invalidateQueries({ queryKey: ["allowed_directions"] });
     } catch (e: any) {
       toast.error("Ошибка: " + (e.message || "неизвестная ошибка"));
     } finally {
