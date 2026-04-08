@@ -485,6 +485,42 @@ export type Database = {
         }
         Relationships: []
       }
+      warehouses: {
+        Row: {
+          address: string
+          city_id: number
+          city_name: string
+          created_at: string
+          id: number
+          latitude: number
+          longitude: number
+          name: string | null
+          updated_at: string
+        }
+        Insert: {
+          address: string
+          city_id: number
+          city_name: string
+          created_at?: string
+          id: number
+          latitude: number
+          longitude: number
+          name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string
+          city_id?: number
+          city_name?: string
+          created_at?: string
+          id?: number
+          latitude?: number
+          longitude?: number
+          name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
