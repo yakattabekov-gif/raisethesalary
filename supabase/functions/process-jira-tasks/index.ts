@@ -124,12 +124,23 @@ async function executeAllActions(
   let anySuccess = false;
 
   for (const actionItem of aiResult.actions) {
+    // Skip actions without invoices (except change_act_number which uses ftl_order_ids)
+    if (actionItem.action !== "change_act_number" && (!actionItem.invoices || actionItem.invoices.length === 0)) {
+      console.log(`[${VERSION}] Skipping action "${actionItem.action}" — no invoices provided`);
+      allSuccess = false;
+      allCommentLines.push(`❌ ${actionItem.action}: нет номеров накладных`);
+      continue;
+    }
+
     const { results, commentLines } = await dispatchAction(actionItem, supabase, settings, taskId, dryRun, cancelledInvoices);
     allResults.push(...results);
     allCommentLines.push(...commentLines);
     if (!results.every((r: any) => r.success)) allSuccess = false;
     if (results.some((r: any) => r.success)) anySuccess = true;
   }
+
+  // If no results at all, mark as not successful
+  if (allResults.length === 0) allSuccess = false;
 
   return { allResults, allCommentLines, allSuccess, anySuccess };
 }
