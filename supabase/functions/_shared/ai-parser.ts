@@ -312,7 +312,7 @@ function postProcessActions(aiResult: any) {
 
     // 3. Validate invoices format
     if (action.invoices) {
-      const validInvoicePattern = /^(?:KXT|SP|SLQ)\d{6,12}$/i;
+      const validInvoicePattern = /^(?:KXT|SP|SLQ|AR)\d{6,12}$/i;
       const valid = action.invoices.filter((inv: string) => validInvoicePattern.test(inv));
       const invalid = action.invoices.filter((inv: string) => !validInvoicePattern.test(inv));
       if (invalid.length > 0) {
@@ -488,7 +488,7 @@ function getBuiltInPrompt(): string {
 РАЗЛИЧАЙ:
 - "Тип перевозки" (авиа/авто) → change_shipment_type
 - "Тип доставки" (курьерская/самовывоз) → ИГНОРИРУЙ!
-- "Добавить направление/маршрут" → ИГНОРИРУЙ!
+- "Добавить направление/маршрут" / "Создать направление" → ИГНОРИРУЙ!
 
 ═══════════════════════════════════════
 💰 БИЗНЕС-ПРАВИЛА ОПЛАТЫ (CRITICAL)
@@ -532,10 +532,28 @@ payment_method: 2 = каспи, 4 = наличные. Если не меняет
 - дубликаты накладных → удалять
 - "СМЕНА ДАННЫХ" в теме — НЕ действие! Определяй из описания.
 - ФТЛ заказы (4-5 цифр): change_act_number и cancel.
+- Накладные: KXT, SP, SLQ, AR (все валидные префиксы!)
 
 ═══════════════════════════════════════
 📋 ПРИМЕРЫ
 ═══════════════════════════════════════
+
+Смена направления с адресом (несколько накладных с РАЗНЫМИ адресами → РАЗНЫЕ actions!):
+Текст: "SP00516123 на Алматы-Актау 27 мкр, зд 85/1. SP00516116 на Алматы-Актау мкр. 12, 80"
+{"actions": [
+  {"action": "change_direction", "invoices": ["SP00516123"], "city": "Актау"},
+  {"action": "update_receiver", "invoices": ["SP00516123"], "address": {"city": "Актау", "street": "27 мкр", "house": "85/1", "full_address": "г. Актау, 27 мкр, зд 85/1"}, "receiver": null},
+  {"action": "change_direction", "invoices": ["SP00516116"], "city": "Актау"},
+  {"action": "update_receiver", "invoices": ["SP00516116"], "address": {"city": "Актау", "street": "мкр. 12", "house": "80", "full_address": "г. Актау, мкр. 12, 80"}, "receiver": null}
+], "confidence": 0.8, "needs_review": false}
+
+Смена направления на тот же город (Алматы→Алматы):
+Текст: "SP00505527 прошу поменять направление на Алматы-Алматы"
+{"actions": [{"action": "change_direction", "invoices": ["SP00505527"], "city": "Алматы", "from_city": "Алматы", "to_city": "Алматы"}], "confidence": 0.9, "needs_review": false}
+
+AR-накладные (ВАЛИДНЫЙ формат!):
+Текст: "AR99986307 и AR99986273 сменить направление на Алматы-Калбатау"
+{"actions": [{"action": "change_direction", "invoices": ["AR99986307", "AR99986273"], "city": "Калбатау", "from_city": "Алматы", "to_city": "Калбатау"}], "confidence": 0.9, "needs_review": false}
 
 Несколько действий:
 Текст: "SP00493934 — сменить телефон на 87773954884. SP00493507 — отменить."
