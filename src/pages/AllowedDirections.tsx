@@ -1,10 +1,12 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useAllowedDirections, useAddDirection, useDeleteDirection, useBulkAddDirections, useDeleteDirectionsByParent } from "@/hooks/useAllowedDirections";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSparkCities } from "@/hooks/useSparkCities";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import CityAutocomplete from "@/components/CityAutocomplete";
 import { toast } from "sonner";
-import { Plus, Trash2, MapPin, Upload } from "lucide-react";
+import { Plus, Trash2, MapPin, Upload, Globe } from "lucide-react";
 import * as XLSX from "xlsx";
 import {
   Dialog,
@@ -13,6 +15,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const AllowedDirections = () => {
   const { data: directions, isLoading } = useAllowedDirections();
@@ -21,12 +30,52 @@ const AllowedDirections = () => {
   const deleteDirection = useDeleteDirection();
   const bulkAdd = useBulkAddDirections();
   const deleteByParent = useDeleteDirectionsByParent();
+  const qc = useQueryClient();
 
   const [parentCity, setParentCity] = useState("");
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [newChild, setNewChild] = useState("");
   const [importing, setImporting] = useState(false);
+  const [addingRegion, setAddingRegion] = useState(false);
+  const [regions, setRegions] = useState<string[]>([]);
+  const [selectedRegion, setSelectedRegion] = useState<string>("");
+  const [loadingRegions, setLoadingRegions] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load regions when a city dialog is opened
+  useEffect(() => {
+    if (selectedCity && regions.length === 0 && !loadingRegions) {
+      setLoadingRegions(true);
+      supabase.functions.invoke("sync-cities", { body: { mode: "regions" } })
+        .then(({ data, error }) => {
+          if (!error && data?.regions) {
+            setRegions(data.regions);
+          }
+        })
+        .finally(() => setLoadingRegions(false));
+    }
+  }, [selectedCity]);
+
+  const handleAddByRegion = async () => {
+    if (!selectedCity || !selectedRegion) return toast.error("Выберите область");
+    setAddingRegion(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-cities", {
+        body: { mode: "directions_by_region", parent_city: selectedCity, region: selectedRegion },
+      });
+      if (error) throw error;
+      const result = data as any;
+      if (result?.error) throw new Error(result.error);
+      toast.success(`Добавлено ${result.added} направлений из области "${selectedRegion}" (пропущено: ${result.skipped})`);
+      // Refresh directions
+      qc.invalidateQueries({ queryKey: ["allowed_directions"] });
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e.message || "неизвестная ошибка"));
+    } finally {
+      setAddingRegion(false);
+      setSelectedRegion("");
+    }
+  };
 
   const handleExcelImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -255,6 +304,33 @@ const AllowedDirections = () => {
               >
                 <Upload className="w-4 h-4" />
                 {importing ? "Импорт..." : "Импорт из Excel"}
+              </Button>
+            </div>
+
+            {/* Add by region */}
+            <div className="flex gap-2 pt-2 border-t border-border items-end">
+              <div className="flex-1">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Добавить по области</label>
+                <Select value={selectedRegion} onValueChange={setSelectedRegion}>
+                  <SelectTrigger className="rounded-xl text-sm h-9">
+                    <SelectValue placeholder={loadingRegions ? "Загрузка..." : "Выберите область"} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    {regions.map((r) => (
+                      <SelectItem key={r} value={r} className="text-sm">{r}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={handleAddByRegion}
+                disabled={addingRegion || !selectedRegion}
+                size="sm"
+                variant="outline"
+                className="rounded-xl gap-1 h-9"
+              >
+                <Globe className="w-4 h-4" />
+                {addingRegion ? "Добавление..." : "Добавить"}
               </Button>
             </div>
 

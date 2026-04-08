@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Upload, Plus, Trash2, Search, Building2 } from "lucide-react";
+import { Upload, Plus, Trash2, Search, Building2, RefreshCw } from "lucide-react";
 import * as XLSX from "xlsx";
 
 const useAddCity = () => {
@@ -51,12 +51,32 @@ const SparkCities = () => {
   const addCity = useAddCity();
   const bulkAdd = useBulkAddCities();
   const deleteCity = useDeleteCity();
+  const qc = useQueryClient();
 
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
   const [search, setSearch] = useState("");
   const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-cities", {
+        body: { mode: "sync" },
+      });
+      if (error) throw error;
+      const result = data as any;
+      if (result?.error) throw new Error(result.error);
+      toast.success(`Синхронизация завершена: ${result?.synced || 0} городов загружено`);
+      qc.invalidateQueries({ queryKey: ["spark_cities"] });
+    } catch (e: any) {
+      toast.error("Ошибка синхронизации: " + (e.message || "неизвестная ошибка"));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (!cities) return [];
@@ -127,11 +147,17 @@ const SparkCities = () => {
 
   return (
     <div className="space-y-8 max-w-3xl">
-      <div>
-        <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Города Spark</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Справочник городов — {cities?.length || 0} записей
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Города Spark</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Справочник городов — {cities?.length || 0} записей
+          </p>
+        </div>
+        <Button onClick={handleSync} disabled={syncing} variant="outline" className="rounded-xl gap-1.5">
+          <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+          {syncing ? "Синхронизация..." : "Синхронизировать из Spark"}
+        </Button>
       </div>
 
       {/* Import + Add */}
