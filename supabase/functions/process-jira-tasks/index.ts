@@ -14,6 +14,8 @@ import { executeChangeShipmentType } from "../_shared/executor-change-shipment-t
 import { executeUpdateSender } from "../_shared/executor-update-sender.ts";
 import { executeChangeSenderDirection } from "../_shared/executor-change-sender-direction.ts";
 import { executeChangeActNumber } from "../_shared/executor-change-act-number.ts";
+import { executeSelfDelivery } from "../_shared/executor-self-delivery.ts";
+import { executeSelfPickup } from "../_shared/executor-self-pickup.ts";
 
 // ---- Action Dispatcher ----
 
@@ -84,6 +86,20 @@ async function dispatchAction(
     const r = await executeChangeActNumber(supabase, settings, actionItem, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ Номер АВР изменён на ${actionItem.act_number} для ФТЛ заказов: ${(actionItem.ftl_order_ids || []).join(", ")}` : `❌ Смена АВР: ${r.error}`));
+
+  } else if (actionItem.action === "self_delivery") {
+    const filtered = filterInvoices(actionItem.invoices || []);
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Самопривоз пропущен — заказ будет отменён`); return { results, commentLines }; }
+    const r = await executeSelfDelivery(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
+    results.push(...r);
+    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: самопривоз установлен (склад ${r.after?.warehouse_id || ""})` : `❌ ${r.invoice}: ${r.error}`));
+
+  } else if (actionItem.action === "self_pickup") {
+    const filtered = filterInvoices(actionItem.invoices || []);
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Самовывоз пропущен — заказ будет отменён`); return { results, commentLines }; }
+    const r = await executeSelfPickup(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
+    results.push(...r);
+    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: самовывоз установлен (склад ${r.after?.warehouse_id || ""})` : `❌ ${r.invoice}: ${r.error}`));
   }
 
   return { results, commentLines };
