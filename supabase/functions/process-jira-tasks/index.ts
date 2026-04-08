@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.95.3";
 
 import { VERSION, corsHeaders, delay, extractTextFromADF } from "../_shared/helpers.ts";
 import { sendTelegramNotification } from "../_shared/telegram.ts";
-import { fetchJiraComments, addJiraComment, transitionJiraIssue } from "../_shared/jira.ts";
+import { fetchJiraComments, transitionJiraIssue } from "../_shared/jira.ts";
 import { parseWithAI } from "../_shared/ai-parser.ts";
 import { executeCancelOrders } from "../_shared/executor-cancel.ts";
 import { executeRestoreOrder } from "../_shared/executor-restore.ts";
