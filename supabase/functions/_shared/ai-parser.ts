@@ -283,6 +283,14 @@ function postProcessActions(aiResult: any) {
         console.log(`[${VERSION}] Post-process: COD-only payment change detected for ${action.invoices?.join(", ")}`);
       }
 
+      // CONFLICT DETECTION: cash_sum AND cod_payment both set in same action
+      const hasCashSum = p.cash_sum !== null && p.cash_sum !== undefined && Number(p.cash_sum) > 0;
+      const hasCodPayment = p.cod_payment !== null && p.cod_payment !== undefined;
+      if (hasCashSum && hasCodPayment) {
+        console.log(`[${VERSION}] ⚠️ CONFLICT: cash_sum (${p.cash_sum}) AND cod_payment (${p.cod_payment}) both set for ${action.invoices?.join(", ")}. Flagging needs_review.`);
+        aiResult.needs_review = true;
+      }
+
       // Validate payment_type values (only 1, 2 or null allowed)
       if (p.payment_type !== null && p.payment_type !== undefined && ![1, 2].includes(Number(p.payment_type))) {
         console.log(`[${VERSION}] Post-process: invalid payment_type "${p.payment_type}" → null`);
