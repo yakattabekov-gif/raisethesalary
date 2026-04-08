@@ -84,8 +84,8 @@ export async function executeSelfPickup(
         // Try fetching from Spark API
         try {
           const whResp = await fetch(
-            `${sparkUrl}/warehouses?city_id=${targetCityId}`,
-            { headers: { Authorization: `Bearer ${sparkToken}` } }
+            `https://gateway.spark.kz/location/api/warehouses?city_id=${targetCityId}`,
+            { headers: { Authorization: `Bearer ${sparkToken}`, Accept: "application/json" } }
           );
           if (whResp.ok) {
             const whData = await whResp.json();
