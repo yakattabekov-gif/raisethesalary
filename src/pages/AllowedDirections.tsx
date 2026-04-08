@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAllowedDirections, useAddDirection, useDeleteDirection, useBulkAddDirections, useDeleteDirectionsByParent } from "@/hooks/useAllowedDirections";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSparkCities } from "@/hooks/useSparkCities";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
