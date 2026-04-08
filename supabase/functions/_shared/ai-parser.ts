@@ -1,32 +1,109 @@
 import { VERSION, normalizePhone } from "./helpers.ts";
 
-// ---- Stage 1: Strict structured parser ----
-async function callStrictParser(
-  apiKey: string, systemPrompt: string, summary: string, description: string
-): Promise<any> {
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
+// ---- Multi-provider AI call ----
+async function callAI(
+  provider: string, apiKey: string, systemPrompt: string, userContent: string, temperature: number = 0
+): Promise<string> {
+  let url: string;
+  let headers: Record<string, string>;
+  let body: any;
+
+  if (provider === "claude") {
+    url = "https://api.anthropic.com/v1/messages";
+    headers = {
+      "x-api-key": apiKey,
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01",
+    };
+    body = {
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+      temperature,
+    };
+  } else if (provider === "lovable") {
+    url = "https://ai.gateway.lovable.dev/v1/chat/completions";
+    headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    };
+    body = {
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      temperature,
+    };
+  } else {
+    // openai (default)
+    url = "https://api.openai.com/v1/chat/completions";
+    headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    };
+    body = {
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `Тема: ${summary}\n\nОписание: ${description}` },
+        { role: "user", content: userContent },
       ],
-      temperature: 0,
-    }),
+      temperature,
+    };
+  }
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
   });
+
   if (!resp.ok) {
     const t = await resp.text();
-    throw new Error(`OpenAI API error ${resp.status}: ${t}`);
+    throw new Error(`${provider} API error ${resp.status}: ${t}`);
   }
+
   const data = await resp.json();
-  return data.choices?.[0]?.message?.content || "";
+
+  if (provider === "claude") {
+    // Anthropic response format
+    return data.content?.[0]?.text || "";
+  } else {
+    // OpenAI-compatible format (openai + lovable)
+    return data.choices?.[0]?.message?.content || "";
+  }
+}
+
+// Resolve provider and API key from settings
+function resolveProvider(settings: Record<string, string>): { provider: string; apiKey: string } {
+  const provider = (settings.ai_provider || "openai").toLowerCase();
+  
+  if (provider === "claude") {
+    const key = settings.claude_api_key;
+    if (!key) throw new Error("Claude API Key not configured in settings");
+    return { provider: "claude", apiKey: key };
+  } else if (provider === "lovable") {
+    const key = Deno.env.get("LOVABLE_API_KEY");
+    if (!key) throw new Error("LOVABLE_API_KEY not available");
+    return { provider: "lovable", apiKey: key };
+  } else {
+    const key = settings.openai_api_key;
+    if (!key) throw new Error("OpenAI API Key not configured in settings");
+    return { provider: "openai", apiKey: key };
+  }
+}
+
+// ---- Stage 1: Strict structured parser ----
+async function callStrictParser(
+  provider: string, apiKey: string, systemPrompt: string, summary: string, description: string
+): Promise<any> {
+  return callAI(provider, apiKey, systemPrompt, `Тема: ${summary}\n\nОписание: ${description}`, 0);
 }
 
 // ---- Stage 2: Independent reviewer (no strict schema, just analyse) ----
 async function callIndependentReviewer(
-  apiKey: string, summary: string, description: string
+  provider: string, apiKey: string, summary: string, description: string
 ): Promise<string> {
   const reviewPrompt = `Ты — независимый аналитик заявок логистической компании Spark. Прочитай заявку из Jira и определи:
 1. Что КОНКРЕТНО просит клиент? Перечисли все действия своими словами.
@@ -39,32 +116,17 @@ async function callIndependentReviewer(
 - "Внести сумму наличку" = установить сумму оплаты за перевозку наличными. Тоже СТАНДАРТНАЯ операция.
 - Каспи (Kaspi) — это способ оплаты (payment_method), а НЕ банковский счёт. Не нужны детали "на какой счёт".
 - Не путай "внести сумму" (cash_sum — оплата за перевозку) с "НП/наложка" (cod_payment — наложенный платёж).
+- "Убрать НП" = обнулить cod_payment. НЕ МЕНЯТЬ payment_type, payment_method, cash_sum!
+- Если заявка содержит НЕСКОЛЬКО накладных с РАЗНЫМИ суммами — каждая должна быть отдельным действием.
 
 Отвечай кратко, по пунктам. НЕ форматируй как JSON. Просто анализ.`;
 
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: reviewPrompt },
-        { role: "user", content: `Тема: ${summary}\n\nОписание: ${description}` },
-      ],
-      temperature: 0.2,
-    }),
-  });
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`OpenAI reviewer error ${resp.status}: ${t}`);
-  }
-  const data = await resp.json();
-  return data.choices?.[0]?.message?.content || "";
+  return callAI(provider, apiKey, reviewPrompt, `Тема: ${summary}\n\nОписание: ${description}`, 0.2);
 }
 
 // ---- Stage 3: Comparator — decides if actions are correct ----
 async function callComparator(
-  apiKey: string, parserResult: string, reviewerAnalysis: string, summary: string, description: string
+  provider: string, apiKey: string, parserResult: string, reviewerAnalysis: string, summary: string, description: string
 ): Promise<{ approved: boolean; corrected_actions?: any; reason: string }> {
   const comparatorPrompt = `Ты — финальный арбитр. Твоя задача — сравнить результат парсера (JSON) с независимым анализом заявки и решить, правильно ли парсер определил действия.
 
@@ -88,6 +150,10 @@ async function callComparator(
 - НЕ ВЫДУМЫВАЙ значения типа "remove_cod" — используй ТОЛЬКО числа (1,2,3,4) или null!
 - Если парсер вернул cod_payment=0 и остальное null — это ПРАВИЛЬНО для "убрать НП". ОДОБРЯЙ!
 
+КРИТИЧЕСКИ ВАЖНО — ПРОВЕРКА СУММ:
+- Если НП (cod_payment) уже есть у заказа и заявка НЕ просит его менять — НЕ обнуляй cod_payment!
+- Если заявка просит только "внести сумму" — это cash_sum, НЕ трогай cod_payment!
+
 Формат ответа — СТРОГО JSON:
 {
   "approved": true/false,
@@ -97,24 +163,12 @@ async function callComparator(
 
 ВЕРНИ ТОЛЬКО JSON.`;
 
-  const resp = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: comparatorPrompt },
-        { role: "user", content: `ОРИГИНАЛЬНАЯ ЗАЯВКА:\nТема: ${summary}\nОписание: ${description}\n\nРЕЗУЛЬТАТ ПАРСЕРА (JSON):\n${parserResult}\n\nНЕЗАВИСИМЫЙ АНАЛИЗ:\n${reviewerAnalysis}` },
-      ],
-      temperature: 0,
-    }),
-  });
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`OpenAI comparator error ${resp.status}: ${t}`);
-  }
-  const data = await resp.json();
-  const content = data.choices?.[0]?.message?.content || "";
+  const content = await callAI(
+    provider, apiKey, comparatorPrompt,
+    `ОРИГИНАЛЬНАЯ ЗАЯВКА:\nТема: ${summary}\nОписание: ${description}\n\nРЕЗУЛЬТАТ ПАРСЕРА (JSON):\n${parserResult}\n\nНЕЗАВИСИМЫЙ АНАЛИЗ:\n${reviewerAnalysis}`,
+    0
+  );
+
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
@@ -141,7 +195,7 @@ function parseAIContent(aiContent: string): any {
   return aiResult;
 }
 
-// ---- Phone validation (unchanged logic) ----
+// ---- Phone validation ----
 function validatePhones(aiResult: any, summary: string, description: string) {
   const fullText = `${summary} ${description}`;
   const phoneRegex = /(?:\+?\s*[78])[\s\-]*(?:\d[\s\-]*){10}/g;
@@ -194,25 +248,121 @@ function validatePhones(aiResult: any, summary: string, description: string) {
   }
 }
 
+// ---- Post-processing: validate and clean AI output ----
+function postProcessActions(aiResult: any) {
+  if (!aiResult.actions) return;
+
+  for (const action of aiResult.actions) {
+    // 1. Strip "Казахстан" from city fields — it's a country, not a city
+    if (action.address?.city && action.address.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
+      console.log(`[${VERSION}] Post-process: stripped "Казахстан" from address.city`);
+      action.address.city = null;
+    }
+    if (action.city && action.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
+      console.log(`[${VERSION}] Post-process: stripped "Казахстан" from action.city`);
+      action.city = null;
+    }
+    // Strip from full_address prefix
+    if (action.address?.full_address) {
+      action.address.full_address = action.address.full_address.replace(/^Казахстан,?\s*/i, "");
+    }
+
+    // 2. Validate payment data consistency
+    if (action.action === "update_payment" && action.payment) {
+      const p = action.payment;
+      
+      // If cod_payment is explicitly set and other fields are null — this is a cod-only change, leave as is
+      const isCodOnly = (p.cod_payment !== null && p.cod_payment !== undefined) &&
+        p.payment_type === null && p.payment_method === null && p.cash_sum === null;
+      
+      if (isCodOnly) {
+        console.log(`[${VERSION}] Post-process: COD-only payment change detected for ${action.invoices?.join(", ")}`);
+      }
+
+      // Validate payment_type values (only 1, 2 or null allowed)
+      if (p.payment_type !== null && p.payment_type !== undefined && ![1, 2].includes(Number(p.payment_type))) {
+        console.log(`[${VERSION}] Post-process: invalid payment_type "${p.payment_type}" → null`);
+        p.payment_type = null;
+      }
+
+      // Validate payment_method values (only 1, 2, 3, 4 or null allowed)
+      if (p.payment_method !== null && p.payment_method !== undefined && ![1, 2, 3, 4].includes(Number(p.payment_method))) {
+        console.log(`[${VERSION}] Post-process: invalid payment_method "${p.payment_method}" → null`);
+        p.payment_method = null;
+      }
+
+      // Validate cod_payment is numeric
+      if (p.cod_payment !== null && p.cod_payment !== undefined && isNaN(Number(p.cod_payment))) {
+        console.log(`[${VERSION}] Post-process: invalid cod_payment "${p.cod_payment}" → null`);
+        p.cod_payment = null;
+      }
+    }
+
+    // 3. Validate invoices format
+    if (action.invoices) {
+      const validInvoicePattern = /^(?:KXT|SP|SLQ)\d{6,12}$/i;
+      const valid = action.invoices.filter((inv: string) => validInvoicePattern.test(inv));
+      const invalid = action.invoices.filter((inv: string) => !validInvoicePattern.test(inv));
+      if (invalid.length > 0) {
+        console.log(`[${VERSION}] Post-process: removed invalid invoices: ${invalid.join(", ")}`);
+        action.invoices = valid;
+      }
+    }
+
+    // 4. Validate FTL order IDs (4-5 digits)
+    if (action.action === "change_act_number" && action.ftl_order_ids) {
+      const valid = action.ftl_order_ids.filter((id: string) => /^\d{4,5}$/.test(String(id)));
+      const invalid = action.ftl_order_ids.filter((id: string) => !/^\d{4,5}$/.test(String(id)));
+      if (invalid.length > 0) {
+        console.log(`[${VERSION}] Post-process: removed invalid FTL IDs: ${invalid.join(", ")}`);
+        action.ftl_order_ids = valid;
+      }
+    }
+
+    // 5. Normalize phone numbers in all nested objects
+    if (action.receiver?.phone) {
+      action.receiver.phone = normalizePhone(action.receiver.phone);
+    }
+    if (action.receiver?.additional_phone) {
+      action.receiver.additional_phone = normalizePhone(action.receiver.additional_phone);
+    }
+    if (action.sender?.phone) {
+      action.sender.phone = normalizePhone(action.sender.phone);
+    }
+  }
+
+  // Remove actions with empty invoices (except change_act_number which uses ftl_order_ids)
+  aiResult.actions = aiResult.actions.filter((a: any) => {
+    if (a.action === "change_act_number") {
+      return a.ftl_order_ids && a.ftl_order_ids.length > 0;
+    }
+    if (a.invoices && a.invoices.length === 0) {
+      console.log(`[${VERSION}] Post-process: removed action "${a.action}" with no valid invoices`);
+      return false;
+    }
+    return true;
+  });
+}
+
 // ---- Main export: 3-stage AI pipeline ----
 export async function parseWithAI(
   settings: Record<string, string>, summary: string, description: string,
   supabase: any, taskId: string
 ) {
-  const apiKey = settings.openai_api_key;
-  if (!apiKey) throw new Error("OpenAI API Key not configured in settings");
+  const { provider, apiKey } = resolveProvider(settings);
+  console.log(`[${VERSION}] Using AI provider: ${provider}`);
 
   const customPrompt = settings.ai_system_prompt;
   const systemPrompt = (customPrompt && customPrompt.trim().length > 50) ? customPrompt : getBuiltInPrompt();
 
   // === STAGE 1: Strict parser ===
   console.log(`[${VERSION}] Stage 1: Strict parser for task ${taskId}`);
-  const parserContent = await callStrictParser(apiKey, systemPrompt, summary, description);
+  const parserContent = await callStrictParser(provider, apiKey, systemPrompt, summary, description);
   const parserResult = parseAIContent(parserContent);
 
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "ai_parse", step: "stage1_parser",
-    request_data: { summary, description },
+    request_data: { summary, description, provider },
     response_data: { raw: parserContent, parsed: parserResult }, success: true,
   });
 
@@ -224,21 +374,21 @@ export async function parseWithAI(
 
   // === STAGE 2: Independent reviewer ===
   console.log(`[${VERSION}] Stage 2: Independent reviewer for task ${taskId}`);
-  const reviewerAnalysis = await callIndependentReviewer(apiKey, summary, description);
+  const reviewerAnalysis = await callIndependentReviewer(provider, apiKey, summary, description);
 
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "ai_parse", step: "stage2_reviewer",
-    request_data: { summary, description },
+    request_data: { summary, description, provider },
     response_data: { analysis: reviewerAnalysis }, success: true,
   });
 
   // === STAGE 3: Comparator ===
   console.log(`[${VERSION}] Stage 3: Comparator for task ${taskId}`);
-  const comparatorResult = await callComparator(apiKey, parserContent, reviewerAnalysis, summary, description);
+  const comparatorResult = await callComparator(provider, apiKey, parserContent, reviewerAnalysis, summary, description);
 
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "ai_parse", step: "stage3_comparator",
-    request_data: { parser_result: parserContent, reviewer_analysis: reviewerAnalysis },
+    request_data: { parser_result: parserContent, reviewer_analysis: reviewerAnalysis, provider },
     response_data: comparatorResult, success: true,
   });
 
@@ -258,27 +408,12 @@ export async function parseWithAI(
   // Phone validation on final result
   validatePhones(finalResult, summary, description);
 
-  // Strip "Казахстан" from city fields — it's a country, not a city
-  if (finalResult.actions) {
-    for (const action of finalResult.actions) {
-      if (action.address?.city && action.address.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
-        console.log(`[${VERSION}] Post-process: stripped "Казахстан" from address.city`);
-        action.address.city = null;
-      }
-      if (action.city && action.city.toLowerCase().replace(/\s/g, "") === "казахстан") {
-        console.log(`[${VERSION}] Post-process: stripped "Казахстан" from action.city`);
-        action.city = null;
-      }
-      // Also strip from full_address prefix
-      if (action.address?.full_address) {
-        action.address.full_address = action.address.full_address.replace(/^Казахстан,?\s*/i, "");
-      }
-    }
-  }
+  // Post-processing: validate all fields, strip invalid values
+  postProcessActions(finalResult);
 
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "ai_parse", step: "final_result",
-    request_data: { summary, description },
+    request_data: { summary, description, provider },
     response_data: finalResult, success: true,
   });
 
@@ -380,7 +515,7 @@ function getBuiltInPrompt(): string {
     {
       "action": "update_payment",
       "invoices": ["KXT110098207"],
-      "payment": {"payment_type": 2, "payment_method": 4, "cash_sum": null}
+      "payment": {"payment_type": 2, "payment_method": 4, "cash_sum": null, "cod_payment": null}
     }
   ]
 }
@@ -392,7 +527,7 @@ function getBuiltInPrompt(): string {
     {
       "action": "update_payment",
       "invoices": ["KXT110098207"],
-      "payment": {"payment_type": 1, "payment_method": 4, "cash_sum": 100}
+      "payment": {"payment_type": 1, "payment_method": 4, "cash_sum": 100, "cod_payment": null}
     }
   ]
 }
@@ -401,9 +536,9 @@ function getBuiltInPrompt(): string {
 Текст: "SP00489715 прошу внести сумму на каспий 3656 тг\\nSP00490201 26607 тг\\nSP00493407 29766 тг"
 {
   "actions": [
-    {"action": "update_payment", "invoices": ["SP00489715"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 3656}},
-    {"action": "update_payment", "invoices": ["SP00490201"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 26607}},
-    {"action": "update_payment", "invoices": ["SP00493407"], "payment": {"payment_type": 2, "payment_method": 2, "cash_sum": 29766}}
+    {"action": "update_payment", "invoices": ["SP00489715"], "payment": {"payment_type": null, "payment_method": 2, "cash_sum": 3656, "cod_payment": null}},
+    {"action": "update_payment", "invoices": ["SP00490201"], "payment": {"payment_type": null, "payment_method": 2, "cash_sum": 26607, "cod_payment": null}},
+    {"action": "update_payment", "invoices": ["SP00493407"], "payment": {"payment_type": null, "payment_method": 2, "cash_sum": 29766, "cod_payment": null}}
   ]
 }
 
@@ -498,7 +633,7 @@ function getBuiltInPrompt(): string {
 }
 
 Правила для change_act_number:
-- ftl_order_ids: массив ID ФТЛ заказов. КАЖДЫЙ ID должен быть СТРОГО 4 цифры.
+- ftl_order_ids: массив ID ФТЛ заказов. КАЖДЫЙ ID должен быть 4-5 цифр.
 - У этого действия НЕТ поля "invoices" — используются ftl_order_ids
 
 Пример ВОССТАНОВЛЕНИЕ ЗАКАЗА:
@@ -512,10 +647,16 @@ function getBuiltInPrompt(): string {
 }
 
 Правила для payment:
-- payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано — НЕ УКАЗЫВАЙ (null).
-- payment_method: 4 = наличка/наличные, 2 = каспий/kaspi/безнал/платежи. Если не указано — НЕ УКАЗЫВАЙ (null).
+- payment_type: 1 = оплата отправителем, 2 = оплата получателем. Если не указано или не меняется — ставь null.
+- payment_method: 4 = наличка/наличные, 2 = каспий/kaspi/безнал/платежи. Если не указано или не меняется — ставь null.
 - cash_sum: ТОЛЬКО если сумма ЯВНО указана. Иначе null.
+- cod_payment: ТОЛЬКО если речь про НП/наложку. Иначе null.
 - Если у каждой накладной СВОЯ сумма — создай ОТДЕЛЬНЫЙ update_payment для каждой!
+
+КРИТИЧЕСКИ ВАЖНО — ПРАВИЛО: НЕ МЕНЯЛ = null:
+Любое поле в payment, которое заявка НЕ просит изменить — должно быть null!
+Это значит: НЕ ставь 0 для cod_payment если не просят убрать НП, НЕ ставь payment_type если не просят сменить плательщика.
+Только ЯВНО запрошенные изменения получают значения, все остальное — null.
 
 КРИТИЧЕСКИ ВАЖНО — "ВНЕСТИ СУММУ" / "НАЛИЧКА" / "КАСПИ" (БЕЗ упоминания НП):
 Когда пишут "внести сумму", "внести сумму наличку", "внести сумму на каспи", "сумма за перевозку" и НЕТ слов "НП"/"наложка"/"наложный платеж" — это ОПЛАТА ЗА ПЕРЕВОЗКУ!
@@ -530,8 +671,8 @@ function getBuiltInPrompt(): string {
 - "Добавить НП 5000", "наложка 5000" → payment: {"cod_payment": 5000, "payment_type": null, "payment_method": null, "cash_sum": null}
 - Когда в заявке речь ТОЛЬКО про НП/наложку — НЕ ТРОГАЙ payment_type, payment_method и cash_sum! Ставь их в null!
 
-ПРАВИЛА ДЛЯ ФТЛ ЗАКАЗОВ (4-значные номера):
-- Если номер состоит РОВНО из 4 цифр — это ФТЛ заказ.
+ПРАВИЛА ДЛЯ ФТЛ ЗАКАЗОВ (4-5 значные номера):
+- Если номер состоит из 4-5 цифр — это ФТЛ заказ.
 - ФТЛ заказы поддерживают действия: change_act_number и cancel.
 - Для остальных действий (update_receiver, update_payment, change_direction и т.д.) ФТЛ заказы НЕ поддерживаются.
 
