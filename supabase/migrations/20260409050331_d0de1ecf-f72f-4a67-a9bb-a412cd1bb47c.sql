@@ -1,0 +1,1 @@
+UPDATE processed_tasks SET status = 'pending', retry_count = 0 WHERE jira_issue_key IN ('SH-45713', 'SH-45724', 'SH-45725');
