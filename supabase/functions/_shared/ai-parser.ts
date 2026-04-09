@@ -610,7 +610,11 @@ AR-накладные (ВАЛИДНЫЙ формат!):
 Смена типа перевозки (1=Авто, 2=Авиа):
 {"actions": [{"action": "change_shipment_type", "invoices": ["KXT110098207"], "shipment_type": 2}], "confidence": 0.95, "needs_review": false}
 
-Смена адреса отправителя:
+Смена адреса отправителя (ПОДДЕРЖИВАЕТСЯ! action: "update_sender"):
+Текст: "SP00518750 прошу сменить адрес отправителя на Луначарского 43"
+{"actions": [{"action": "update_sender", "invoices": ["SP00518750"], "address": {"city": null, "street": "Луначарского", "house": "43", "full_address": "ул. Луначарского, 43"}, "sender": null}], "confidence": 0.95, "needs_review": false}
+
+Ещё пример update_sender:
 {"actions": [{"action": "update_sender", "invoices": ["SP00493934"], "address": {"city": null, "street": "Бекболата", "house": "2/2", "full_address": "ул. Бекболата, 2/2"}, "sender": null}], "confidence": 0.95, "needs_review": false}
 
 change_sender_direction с данными (НЕ создавай отдельный update_sender!):
