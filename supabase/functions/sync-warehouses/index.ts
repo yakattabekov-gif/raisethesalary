@@ -14,12 +14,13 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Auth check - allow anon key for cron/internal calls
+    // Auth check - allow anon key and apikey header for cron/internal calls
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace("Bearer ", "");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const apikeyHeader = req.headers.get("apikey") || "";
     const isServiceRole = token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const isAnonKey = token === anonKey;
+    const isAnonKey = token === anonKey || apikeyHeader === anonKey;
 
     if (!isServiceRole && !isAnonKey) {
       if (!token) {
