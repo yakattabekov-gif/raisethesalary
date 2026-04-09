@@ -187,6 +187,7 @@ export function resolvePaymentType(val: any): number {
   const map: Record<string, number> = {
     "отправителем": 1, "sender": 1, "отправитель": 1,
     "получателем": 2, "receiver": 2, "получатель": 2,
+    "kaspi": 2, "каспи": 2, "каспий": 2,
   };
   const key = String(val).toLowerCase().trim();
   return map[key] ?? 2;
