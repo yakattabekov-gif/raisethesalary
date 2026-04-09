@@ -107,7 +107,7 @@ async function callIndependentReviewer(
 ): Promise<string> {
   const reviewPrompt = `Ты — независимый аналитик заявок логистической компании Spark. Прочитай заявку из Jira и определи:
 1. Что КОНКРЕТНО просит клиент? Перечисли все действия своими словами.
-2. Какие номера накладных упоминаются? (формат KXT..., SP..., SLQ...)
+2. Какие номера накладных упоминаются? (формат KXT..., SP..., SLQ..., AR..., а также 15-значные цифровые баркоды)
 3. Какие данные клиент предоставил (телефоны, адреса, суммы, города)?
 4. Есть ли что-то неоднозначное или подозрительное в заявке?
 
@@ -310,9 +310,9 @@ function postProcessActions(aiResult: any) {
       }
     }
 
-    // 3. Validate invoices format
+    // 3. Validate invoices format (prefixed like KXT/SP/SLQ/AR + 12-15 digit barcodes)
     if (action.invoices) {
-      const validInvoicePattern = /^(?:KXT|SP|SLQ|AR)\d{6,12}$/i;
+      const validInvoicePattern = /^(?:(?:KXT|SP|SLQ|AR)\d{6,12}|\d{12,15})$/i;
       const valid = action.invoices.filter((inv: string) => validInvoicePattern.test(inv));
       const invalid = action.invoices.filter((inv: string) => !validInvoicePattern.test(inv));
       if (invalid.length > 0) {
@@ -553,6 +553,7 @@ payment_method: 2 = каспи, 4 = наличные. Если не меняет
 - "СМЕНА ДАННЫХ" в теме — НЕ действие! Определяй из описания.
 - ФТЛ заказы (4-5 цифр): change_act_number и cancel.
 - Накладные: KXT, SP, SLQ, AR (все валидные префиксы!)
+- 12-15 значные ЦИФРОВЫЕ коды (баркоды/трекинг) — тоже ВАЛИДНЫЕ номера накладных! Пример: "301547806472000", "351033155160000"
 
 ═══════════════════════════════════════
 📋 ПРИМЕРЫ
