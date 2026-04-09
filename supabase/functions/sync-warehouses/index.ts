@@ -90,12 +90,12 @@ Deno.serve(async (req) => {
     for (let i = 0; i < allWarehouses.length; i += 100) {
       const batch = allWarehouses.slice(i, i + 100).map((w: any) => ({
         id: w.id,
-        city_id: w.city_id || w.city?.id || 0,
-        city_name: w.city?.name || w.city_name || "",
-        address: w.address || w.full_address || "",
+        city_id: w.cityId || w.city_id || w.city?.id || 0,
+        city_name: w.cityName || w.city_name || w.city?.name || "",
+        address: w.fullAddress || w.fullAddressRu || w.full_address || w.address || "",
         latitude: w.latitude ? Number(w.latitude) : 0,
         longitude: w.longitude ? Number(w.longitude) : 0,
-        name: w.name || w.title || null,
+        name: w.title || w.titleRu || w.name || null,
       }));
 
       const { error } = await supabaseAdmin.from("warehouses").upsert(batch, { onConflict: "id" });
