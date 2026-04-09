@@ -83,6 +83,9 @@ Deno.serve(async (req) => {
       page++;
     }
 
+    if (allWarehouses.length > 0) {
+      console.log(`[sync-warehouses] Sample warehouse:`, JSON.stringify(allWarehouses[0]).substring(0, 500));
+    }
     console.log(`[sync-warehouses] Total warehouses fetched: ${allWarehouses.length}`);
 
     // Upsert into warehouses table
