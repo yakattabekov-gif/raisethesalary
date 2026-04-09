@@ -93,10 +93,10 @@ export async function executeSelfDelivery(
                 id: warehouse.id,
                 city_id: targetCityId,
                 city_name: targetCityName,
-                address: warehouse.address || warehouse.full_address || "",
+                address: warehouse.fullAddress || warehouse.fullAddressRu || warehouse.address || warehouse.full_address || "",
                 latitude: warehouse.latitude ? Number(warehouse.latitude) : 0,
                 longitude: warehouse.longitude ? Number(warehouse.longitude) : 0,
-                name: warehouse.name || warehouse.title || null,
+                name: warehouse.title || warehouse.titleRu || warehouse.name || null,
               });
             }
           }
