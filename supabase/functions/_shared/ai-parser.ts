@@ -491,7 +491,7 @@ function getBuiltInPrompt(): string {
 4. СМЕНА ОПЛАТЫ (action: "update_payment") — изменить способ/тип оплаты, ВНЕСТИ СУММУ, убрать/добавить НП
 5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — изменить ГОРОД НАЗНАЧЕНИЯ
 6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — авто/авиа
-7. СМЕНА АДРЕСА ОТПРАВИТЕЛЯ (action: "update_sender") — изменить адрес/данные ОТПРАВИТЕЛЯ
+7. СМЕНА АДРЕСА ОТПРАВИТЕЛЯ (action: "update_sender") — изменить адрес/данные ОТПРАВИТЕЛЯ. Ключевые фразы: "сменить адрес отправителя", "изменить адрес отправителя", "адрес отправки", "данные отправителя". ЭТО ПОДДЕРЖИВАЕТСЯ!
 8. СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ (action: "change_sender_direction") — изменить ГОРОД ОТПРАВИТЕЛЯ
 9. СМЕНА НОМЕРА АВР (action: "change_act_number") — сменить номер АВР для ФТЛ заказов
 10. ВОССТАНОВЛЕНИЕ ЗАКАЗА (action: "restore_order") — ВОССТАНОВИТЬ отменённый заказ
@@ -610,7 +610,11 @@ AR-накладные (ВАЛИДНЫЙ формат!):
 Смена типа перевозки (1=Авто, 2=Авиа):
 {"actions": [{"action": "change_shipment_type", "invoices": ["KXT110098207"], "shipment_type": 2}], "confidence": 0.95, "needs_review": false}
 
-Смена адреса отправителя:
+Смена адреса отправителя (ПОДДЕРЖИВАЕТСЯ! action: "update_sender"):
+Текст: "SP00518750 прошу сменить адрес отправителя на Луначарского 43"
+{"actions": [{"action": "update_sender", "invoices": ["SP00518750"], "address": {"city": null, "street": "Луначарского", "house": "43", "full_address": "ул. Луначарского, 43"}, "sender": null}], "confidence": 0.95, "needs_review": false}
+
+Ещё пример update_sender:
 {"actions": [{"action": "update_sender", "invoices": ["SP00493934"], "address": {"city": null, "street": "Бекболата", "house": "2/2", "full_address": "ул. Бекболата, 2/2"}, "sender": null}], "confidence": 0.95, "needs_review": false}
 
 change_sender_direction с данными (НЕ создавай отдельный update_sender!):
