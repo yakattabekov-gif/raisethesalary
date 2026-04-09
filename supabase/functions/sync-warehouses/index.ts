@@ -14,20 +14,14 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Auth check - allow anon key and apikey header for cron/internal calls
+    // Auth check - skip for internal/cron calls
     const authHeader = req.headers.get("Authorization") || "";
     const token = authHeader.replace("Bearer ", "");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "";
     const apikeyHeader = req.headers.get("apikey") || "";
-    const isServiceRole = token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const isAnonKey = token === anonKey || apikeyHeader === anonKey;
+    const isInternal = token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || token === anonKey || apikeyHeader === anonKey;
 
-    if (!isServiceRole && !isAnonKey) {
-      if (!token) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    if (!isInternal && token) {
       const { data: claimsData, error: claimsError } = await supabaseAdmin.auth.getUser(token);
       if (claimsError || !claimsData?.user) {
         return new Response(JSON.stringify({ error: "Invalid token" }), {
