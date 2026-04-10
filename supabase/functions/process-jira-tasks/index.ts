@@ -16,6 +16,7 @@ import { executeChangeSenderDirection } from "../_shared/executor-change-sender-
 import { executeChangeActNumber } from "../_shared/executor-change-act-number.ts";
 import { executeSelfDelivery } from "../_shared/executor-self-delivery.ts";
 import { executeSelfPickup } from "../_shared/executor-self-pickup.ts";
+import { executeSetDeclaredPrice } from "../_shared/executor-set-declared-price.ts";
 
 // ---- Action Dispatcher ----
 
@@ -100,6 +101,13 @@ async function dispatchAction(
     const r = await executeSelfPickup(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
     r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: самовывоз установлен (склад ${r.after?.warehouse_id || ""})` : `❌ ${r.invoice}: ${r.error}`));
+
+  } else if (actionItem.action === "set_declared_price") {
+    const filtered = filterInvoices(actionItem.invoices || []);
+    if (filtered.length === 0) { commentLines.push(`ℹ️ Объявленная стоимость пропущена — заказ будет отменён`); return { results, commentLines }; }
+    const r = await executeSetDeclaredPrice(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
+    results.push(...r);
+    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: объявленная стоимость установлена (${r.after?.declaredPrice || ""})` : `❌ ${r.invoice}: ${r.error}`));
   }
 
   return { results, commentLines };
