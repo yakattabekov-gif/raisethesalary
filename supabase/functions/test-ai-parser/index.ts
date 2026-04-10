@@ -122,6 +122,7 @@ function checkExpectation(expect: string, result: any): boolean {
   if (ex.includes("change_direction") && !types.includes("change_direction")) return false;
   if (ex.includes("self_delivery") && !types.includes("self_delivery")) return false;
   if (ex.includes("self_pickup") && !types.includes("self_pickup")) return false;
+  if (ex.includes("set_declared_price") && !types.includes("set_declared_price")) return false;
   if (ex.includes("change_shipment_type") && !types.includes("change_shipment_type")) return false;
   if (ex.includes("restore_order") && !types.includes("restore_order")) return false;
   if (ex.includes("3 invoices")) {
@@ -199,12 +200,15 @@ function getPrompt(customPrompt?: string): string {
 10. ВОССТАНОВЛЕНИЕ (action: "restore_order")
 11. САМОПРИВОЗ (action: "self_delivery") — клиент привозит на склад ОТПРАВИТЕЛЯ
 12. САМОВЫВОЗ (action: "self_pickup") — клиент забирает со склада ПОЛУЧАТЕЛЯ
+13. ОБЪЯВЛЕННАЯ СТОИМОСТЬ / СТРАХОВКА (action: "set_declared_price") — установить объявленную стоимость (страховку). Фразы: "объявленная стоимость", "страховка", "застраховать", "стоимость груза". Поля: declared_price (число), cargo_name (название товара или "-")
+    ⚠️ "объявленная стоимость" — это НЕ оплата! Это страховка! НЕ путать с update_payment!
 
 РАЗЛИЧАЙ:
 - "Закрыть ДК" / "Удалить ДК" / "Верификация" → ИГНОРИРУЙ!
 - "Филиал доставки сделать {город}" = change_direction
 - "Самопривоз" → self_delivery
 - "Самовывоз" → self_pickup
+- "объявленная стоимость" / "страховка" → set_declared_price (НЕ update_payment!)
 
 💰 ОПЛАТА:
 - "каспи/каспий" → payment_method: 2, payment_type: 2
@@ -212,6 +216,10 @@ function getPrompt(customPrompt?: string): string {
 - "перевод" → payment_method: 3
 - "убрать НП" → cod_payment: 0
 - "наложка XXXX" → cod_payment: XXXX
+
+📦 ОБЪЯВЛЕННАЯ СТОИМОСТЬ (СТРАХОВКА):
+- "объявленная стоимость 315000" → {"action": "set_declared_price", "declared_price": 315000, "cargo_name": "-"}
+- "страховка 50000 товар электроника" → {"action": "set_declared_price", "declared_price": 50000, "cargo_name": "электроника"}
 
 📞 ТЕЛЕФОНЫ: 8XXXXXXXXXX → +7XXXXXXXXXX
 
