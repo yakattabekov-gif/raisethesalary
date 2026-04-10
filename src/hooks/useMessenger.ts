@@ -94,7 +94,7 @@ export const useConversations = () => {
 
       const userIds = [...new Set((allParticipants || []).map((p: any) => p.user_id))];
       const { data: profiles } = await supabase
-        .from("profiles")
+        .from("profiles_public" as any)
         .select("id, full_name, avatar_url, nickname")
         .in("id", userIds);
       const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -148,7 +148,7 @@ export const useMessages = (conversationId: string | null) => {
 
       const senderIds = [...new Set((data || []).map((m: any) => m.sender_id).filter(Boolean))];
       const { data: profiles } = await supabase
-        .from("profiles")
+        .from("profiles_public" as any)
         .select("id, full_name, avatar_url, nickname")
         .in("id", senderIds);
       const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
@@ -273,7 +273,7 @@ export const useAllUsers = () => {
     queryKey: ["all-users"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("profiles_public" as any)
         .select("id, full_name, avatar_url, nickname")
         .neq("id", user!.id);
       if (error) throw error;
