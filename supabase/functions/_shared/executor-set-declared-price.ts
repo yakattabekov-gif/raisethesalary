@@ -52,9 +52,9 @@ export async function executeSetDeclaredPrice(
         continue;
       }
 
-      // Use the admin endpoint: PUT /admin/invoices/{invoiceId}/set-declared-price
-      const adminUrl = (settings.spark_base_url || "https://gateway.spark.kz/cabinet/api/v2").replace("/v2", "").replace("/api/v2", "/api");
-      const endpoint = `${adminUrl}/admin/invoices/${invoiceId}/set-declared-price`;
+      // Use the admin endpoint: PUT /cabinet/api/admin/invoices/{invoiceId}/set-declared-price
+      const baseUrl = "https://gateway.spark.kz/cabinet/api";
+      const endpoint = `${baseUrl}/admin/invoices/${invoiceId}/set-declared-price`;
 
       console.log(`[${VERSION}] PUT ${endpoint}`, JSON.stringify(payload));
       const updateResp = await fetch(endpoint, {
