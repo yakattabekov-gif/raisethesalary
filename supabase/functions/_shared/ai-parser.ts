@@ -655,6 +655,14 @@ change_sender_direction с данными (НЕ создавай отдельн�
 Текст: "KXT110150123 самовывоз"
 {"actions": [{"action": "self_pickup", "invoices": ["KXT110150123"]}], "confidence": 0.95, "needs_review": false}
 
+Объявленная стоимость (страховка):
+Текст: "SP00520003 объявленная стоимость 315000"
+{"actions": [{"action": "set_declared_price", "invoices": ["SP00520003"], "declared_price": 315000, "cargo_name": "-"}], "confidence": 0.95, "needs_review": false}
+
+Объявленная стоимость с названием товара:
+Текст: "KXT110150456 объявленная стоимость 50000, товар: электроника"
+{"actions": [{"action": "set_declared_price", "invoices": ["KXT110150456"], "declared_price": 50000, "cargo_name": "электроника"}], "confidence": 0.95, "needs_review": false}
+
 Самопривоз + самовывоз (оба вместе):
 Текст: "SP00520002 самопривоз и самовывоз"
 {"actions": [
