@@ -1,4 +1,4 @@
-export const VERSION = "v2.16.0";
+export const VERSION = "v2.16.1";
 export const TELEGRAM_CHAT_ID = "6645078966";
 
 export function delay(ms: number): Promise<void> {
@@ -114,7 +114,14 @@ export function levenshtein(a: string, b: string): number {
 }
 
 export function normalizeCityName(s: string): string {
-  return s.toLowerCase().replace(/ё/g, "е").replace(/[\s-]+/g, " ").trim();
+  return s
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[’'`]/g, "")
+    .replace(/[()]/g, " ")
+    .replace(/\b(область|обл|район|р-н|город|г|поселок|посёлок|село|аул|станция)\b/g, " ")
+    .replace(/[\s-]+/g, " ")
+    .trim();
 }
 
 export function findCity(name: string, allCities: any[]): { id: number; name: string } | null {

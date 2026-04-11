@@ -300,7 +300,7 @@ serve(async (req) => {
 
         const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-        const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+        const finalStatus = allSuccess ? "completed" : (anySuccess ? "pending" : "ignored");
         await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
         // Send changes to Telegram (not to Jira comments)
@@ -364,7 +364,7 @@ serve(async (req) => {
 
           const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-          const finalStatus = allSuccess ? "completed" : (anySuccess ? "completed" : "ignored");
+          const finalStatus = allSuccess ? "completed" : (anySuccess ? "pending" : "ignored");
           await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
           if (anySuccess) {

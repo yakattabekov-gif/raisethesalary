@@ -119,11 +119,6 @@ export async function executeChangeSenderDirection(
           continue;
         }
 
-        if (c2MatchesSender && c1MatchesReceiver) {
-          // Direction already matches (reversed pair order)
-          results.push({ invoice, success: true, message: "Направление уже соответствует" });
-          continue;
-        }
 
         // Determine which interpretation makes more sense
         // Interpretation A: city1=sender, city2=receiver
