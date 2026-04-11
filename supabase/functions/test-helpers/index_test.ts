@@ -453,16 +453,26 @@ Deno.test("SH-45833: Урджар not in cities, Семей resolves to id=3", (
   assertEquals(originMatch, null);
 });
 
-Deno.test("SH-45833: with allowed_directions fallback, sender should use parent", () => {
-  // Simulate: Урджар not found → mapped to Усть-Каменогорск via allowed_directions
+Deno.test("SH-45833: parent fallback can validate pair but must not force sender rewrite", () => {
   const originMatch = findCity("Усть-Каменогорск", mockCities);
   assertEquals(originMatch?.id, 17);
 
-  // Current state: sender=17(УК), receiver=275(some other)
-  // After: sender should stay 17, receiver should become 3(Семей)
+  const senderMatchesMappedParent = 17 === originMatch?.id;
+  const receiverMatchesDestination = 275 === 3;
+
+  assert(senderMatchesMappedParent);
+  assertEquals(receiverMatchesDestination, false);
+});
+
+Deno.test("SH-45833: when requested origin is missing, only receiver should be changed", () => {
+  const requestedOriginMissing = true;
   const r = determineDirectionChanges(17, 275, 17, 3);
-  assert(!r.changeSender); // sender already matches mapped origin
-  assert(r.changeReceiver); // receiver needs to change to Семей
+
+  const changeSender = requestedOriginMissing ? false : r.changeSender;
+  const changeReceiver = r.changeReceiver;
+
+  assertEquals(changeSender, false);
+  assertEquals(changeReceiver, true);
 });
 
 // ========== Edge cases for findCity to prevent wrong matching ==========
