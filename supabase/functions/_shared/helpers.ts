@@ -126,14 +126,20 @@ export function normalizeCityName(s: string): string {
 
 export function findCity(name: string, allCities: any[]): { id: number; name: string } | null {
   const normalizedTarget = normalizeCityName(name);
-  let bestMatch: any = null;
-  let bestScore = Infinity;
+  if (!normalizedTarget) return null;
+
+  // Pass 1: exact match
+  for (const city of allCities) {
+    if (normalizeCityName(city.name) === normalizedTarget) return city;
+  }
+
+  // Pass 2: strong word overlap / prefix-suffix — but prefer best (longest name) match
+  const targetWords = normalizedTarget.split(" ").filter(Boolean);
+  let strongMatch: any = null;
+  let strongMatchLen = 0;
 
   for (const city of allCities) {
     const normalizedName = normalizeCityName(city.name);
-    if (normalizedName === normalizedTarget) return city;
-
-    const targetWords = normalizedTarget.split(" ").filter(Boolean);
     const cityWords = normalizedName.split(" ").filter(Boolean);
     const hasStrongWordOverlap = targetWords.some((word) => word.length >= 5 && cityWords.includes(word));
     if (
@@ -143,9 +149,22 @@ export function findCity(name: string, allCities: any[]): { id: number; name: st
       normalizedName.startsWith(`${normalizedTarget} `) ||
       normalizedName.endsWith(` ${normalizedTarget}`)
     ) {
-      return city;
+      // Prefer the match whose normalized name length is closest to target
+      const lenDiff = Math.abs(normalizedName.length - normalizedTarget.length);
+      const prevDiff = strongMatch ? Math.abs(strongMatchLen - normalizedTarget.length) : Infinity;
+      if (lenDiff < prevDiff) {
+        strongMatch = city;
+        strongMatchLen = normalizedName.length;
+      }
     }
+  }
+  if (strongMatch) return strongMatch;
 
+  // Pass 3: fuzzy (Levenshtein)
+  let bestMatch: any = null;
+  let bestScore = Infinity;
+  for (const city of allCities) {
+    const normalizedName = normalizeCityName(city.name);
     const dist = levenshtein(normalizedTarget, normalizedName);
     const maxLen = Math.max(normalizedTarget.length, normalizedName.length);
     const similarity = 1 - dist / maxLen;
