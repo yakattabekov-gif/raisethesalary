@@ -114,43 +114,106 @@ function checkExpectation(expect: string, result: any): boolean {
   const types = actions.map((a: any) => a.action);
   const ex = expect.toLowerCase();
 
-  if (ex.includes("ignore") || ex.includes("empty actions")) return actions.length === 0;
-  if (ex.includes("cancel") && !types.includes("cancel")) return false;
-  if (ex.includes("update_receiver") && !types.includes("update_receiver")) return false;
-  if (ex.includes("update_sender") && !types.includes("update_sender")) return false;
-  if (ex.includes("update_payment") && !types.includes("update_payment")) return false;
-  if (ex.includes("change_direction") && !types.includes("change_direction")) return false;
-  if (ex.includes("self_delivery") && !types.includes("self_delivery")) return false;
-  if (ex.includes("self_pickup") && !types.includes("self_pickup")) return false;
-  if (ex.includes("set_declared_price") && !types.includes("set_declared_price")) return false;
-  if (ex.includes("change_shipment_type") && !types.includes("change_shipment_type")) return false;
-  if (ex.includes("restore_order") && !types.includes("restore_order")) return false;
-  if (ex.includes("3 invoices")) {
-    const allInvoices = actions.flatMap((a: any) => a.invoices || []);
-    if (allInvoices.length < 3) return false;
-  }
-  if (ex.includes("2x")) {
-    const relevantType = ex.includes("payment") ? "update_payment" : null;
-    if (relevantType && types.filter((t: string) => t === relevantType).length < 2) return false;
-  }
-  if (ex.includes("method=2")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.payment_method !== 2) return false;
-  }
-  if (ex.includes("method=4")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.payment_method !== 4) return false;
-  }
-  if (ex.includes("cod=0")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.cod_payment !== 0) return false;
-  }
-  if (ex.includes("cod=50000")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.cod_payment !== 50000) return false;
+  // Empty/ignore checks
+  if (ex.includes("ignore") || ex.includes("empty actions") || ex.includes("rejected")) {
+    return actions.length === 0 || result.rejected === true;
   }
 
-  // Basic: at least has the expected action type
+  // Action type checks — support "NOT" prefix
+  const actionChecks: [string, string][] = [
+    ["cancel", "cancel"],
+    ["update_receiver", "update_receiver"],
+    ["update_sender", "update_sender"],
+    ["update_payment", "update_payment"],
+    ["change_direction", "change_direction"],
+    ["change_sender_direction", "change_sender_direction"],
+    ["self_delivery", "self_delivery"],
+    ["self_pickup", "self_pickup"],
+    ["set_declared_price", "set_declared_price"],
+    ["change_shipment_type", "change_shipment_type"],
+    ["restore_order", "restore_order"],
+    ["change_act_number", "change_act_number"],
+  ];
+
+  for (const [keyword, actionType] of actionChecks) {
+    if (ex.includes(`not ${keyword}`)) {
+      if (types.includes(actionType)) return false;
+    } else if (ex.includes(keyword)) {
+      if (!types.includes(actionType)) return false;
+    }
+  }
+
+  // Invoice count checks
+  const invoiceCountMatch = ex.match(/(\d+)\s*invoices?/);
+  if (invoiceCountMatch) {
+    const expected = parseInt(invoiceCountMatch[1]);
+    const allInvoices = actions.flatMap((a: any) => a.invoices || []);
+    if (allInvoices.length < expected) return false;
+  }
+
+  // Multiple action checks (2x, 3x)
+  const multiMatch = ex.match(/(\d+)x\s*(\w+)/);
+  if (multiMatch) {
+    const count = parseInt(multiMatch[1]);
+    const type = multiMatch[2];
+    if (types.filter((t: string) => t === type).length < count) return false;
+  }
+
+  // Payment field checks
+  const methodMatch = ex.match(/method=(\d+)/);
+  if (methodMatch) {
+    const expected = parseInt(methodMatch[1]);
+    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
+    if (!payment || payment.payment_method !== expected) return false;
+  }
+  const typeMatch = ex.match(/type=(\d+)/);
+  if (typeMatch) {
+    const expected = parseInt(typeMatch[1]);
+    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
+    if (!payment || payment.payment_type !== expected) return false;
+  }
+  const codMatch = ex.match(/cod=(\d+)/);
+  if (codMatch) {
+    const expected = parseInt(codMatch[1]);
+    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
+    if (!payment || payment.cod_payment !== expected) return false;
+  }
+  const cashMatch = ex.match(/cash=(\d+)/);
+  if (cashMatch) {
+    const expected = parseInt(cashMatch[1]);
+    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
+    if (!payment || payment.cash_sum !== expected) return false;
+  }
+
+  // City checks
+  const cityMatch = ex.match(/city="([^"]+)"/);
+  if (cityMatch) {
+    const expectedCity = cityMatch[1].toLowerCase();
+    const hasCity = actions.some((a: any) => 
+      (a.city && a.city.toLowerCase().includes(expectedCity)) ||
+      (a.to_city && a.to_city.toLowerCase().includes(expectedCity))
+    );
+    if (!hasCity) return false;
+  }
+
+  // from_city check
+  const fromCityMatch = ex.match(/from_city="([^"]+)"/);
+  if (fromCityMatch) {
+    const expectedFrom = fromCityMatch[1].toLowerCase();
+    const hasFrom = actions.some((a: any) => 
+      a.from_city && a.from_city.toLowerCase().includes(expectedFrom)
+    );
+    if (!hasFrom) return false;
+  }
+
+  // declared_price check
+  const priceMatch = ex.match(/price=(\d+)/);
+  if (priceMatch) {
+    const expected = parseInt(priceMatch[1]);
+    const hasPrice = actions.some((a: any) => a.declared_price === expected);
+    if (!hasPrice) return false;
+  }
+
   return actions.length > 0 || ex.includes("ignore");
 }
 
