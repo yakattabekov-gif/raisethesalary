@@ -119,7 +119,7 @@ export function normalizeCityName(s: string): string {
     .replace(/ё/g, "е")
     .replace(/[’'`]/g, "")
     .replace(/[()]/g, " ")
-    .replace(/(область|обл|район|р-н|город|г|поселок|посёлок|село|аул|станция)/g, " ")
+    .replace(/\b(область|обл|район|р-н|город|г|поселок|посёлок|село|аул|станция)\b/g, " ")
     .replace(/[\s-]+/g, " ")
     .trim();
 }
