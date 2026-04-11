@@ -57,14 +57,36 @@ export async function executeChangeDirection(
     return invoices.map((inv: string) => ({ invoice: inv, success: false, error: `Город "${destinationCity}" не найден` }));
   }
 
-  // Resolve origin city if provided
+  // Resolve origin city if provided.
+  // If exact/fuzzy match is missing in spark_cities, try allowed_directions child->parent mapping
+  // so requests like "Урджар - Семей" still update sender city to the parent direction city.
   let originMatch: { id: number; name: string } | null = null;
+  let originResolution: "direct" | "mapped_child_to_parent" | "missing" = "missing";
   if (originCity) {
     originMatch = findCity(originCity, allCities);
-    if (!originMatch) {
-      console.warn(`[${VERSION}] Origin city "${originCity}" not found — will only change destination`);
-    } else {
+    if (originMatch) {
+      originResolution = "direct";
       console.log(`[${VERSION}] Origin city match: "${originCity}" → id=${originMatch.id}, name="${originMatch.name}"`);
+    } else {
+      const { data: originDirectionRows } = await supabase
+        .from("allowed_directions")
+        .select("parent_city, child_city")
+        .ilike("child_city", originCity)
+        .limit(1);
+
+      const mappedParentCity = originDirectionRows?.[0]?.parent_city || null;
+      if (mappedParentCity) {
+        const mappedOrigin = findCity(mappedParentCity, allCities);
+        if (mappedOrigin) {
+          originMatch = mappedOrigin;
+          originResolution = "mapped_child_to_parent";
+          console.log(`[${VERSION}] Origin city "${originCity}" mapped via allowed_directions to parent "${mappedParentCity}" → id=${mappedOrigin.id}, name="${mappedOrigin.name}"`);
+        }
+      }
+
+      if (!originMatch) {
+        console.warn(`[${VERSION}] Origin city "${originCity}" not found — will only change destination`);
+      }
     }
   }
 
@@ -75,7 +97,7 @@ export async function executeChangeDirection(
   await supabase.from("execution_logs").insert({
     task_id: taskId, action: "change_direction", step: "city_lookup",
     request_data: { requested_city: targetCity, origin: originCity, destination: destinationCity },
-    response_data: { dest_city_id: cityId, dest_city_name: cityName, origin_city_id: originMatch?.id, origin_city_name: originMatch?.name }, success: true,
+    response_data: { dest_city_id: cityId, dest_city_name: cityName, origin_city_id: originMatch?.id, origin_city_name: originMatch?.name, origin_resolution: originResolution }, success: true,
   });
 
   // Check allowed_directions
