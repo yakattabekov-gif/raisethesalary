@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, levenshtein, normalizeCityName, findCity, stripCityFromAddress } from "./helpers.ts";
+import { loadAllSparkCities } from "./load-spark-cities.ts";
 
 export async function executeChangeDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -42,7 +43,7 @@ export async function executeChangeDirection(
   }
 
   // Load all cities
-  const { data: allCities } = await supabase.from("spark_cities").select("id, name");
+  const allCities = await loadAllSparkCities(supabase);
   if (!allCities || allCities.length === 0) {
     return invoices.map((inv: string) => ({ invoice: inv, success: false, error: "Справочник городов пуст" }));
   }
@@ -61,7 +62,7 @@ export async function executeChangeDirection(
   // IMPORTANT: preserve the requested sender city itself whenever it exists in spark_cities.
   // Only fall back to allowed_directions child->parent when the origin city truly does not exist.
   let originMatch: { id: number; name: string } | null = null;
-  let originResolution: "direct" | "mapped_child_to_parent" | "missing" = "missing";
+  let originResolution: "direct" | "mapped_child_to_parent_for_validation" | "missing" = "missing";
   if (originCity) {
     originMatch = findCity(originCity, allCities);
     if (originMatch) {
@@ -79,7 +80,7 @@ export async function executeChangeDirection(
         const mappedOrigin = findCity(mappedParentCity, allCities);
         if (mappedOrigin) {
           originMatch = mappedOrigin;
-          originResolution = "mapped_child_to_parent";
+          originResolution = "mapped_child_to_parent_for_validation";
           console.log(`[${VERSION}] Origin city "${originCity}" not found directly, mapped via allowed_directions to parent "${mappedParentCity}" → id=${mappedOrigin.id}, name="${mappedOrigin.name}"`);
         }
       }
@@ -211,11 +212,17 @@ export async function executeChangeDirection(
         // Requested pair means: sender must be in origin city, receiver must be in destination city.
         // Reverse direction is NOT considered "already matches".
         if (senderMatchesOrigin && receiverMatchesDestination) {
-          results.push({ invoice, success: true, city: `${originMatch.name} - ${cityName}`, message: "Направление уже соответствует" });
+          results.push({ invoice, success: true, city: `${originCity || originMatch.name} - ${cityName}`, message: "Направление уже соответствует" });
           continue;
         }
 
         changeSender = !senderMatchesOrigin;
+
+        if (changeSender && originResolution === "mapped_child_to_parent_for_validation") {
+          console.warn(`[${VERSION}] Sender change skipped: requested origin "${originCity}" was resolved only via parent mapping "${originMatch.name}"; applying parent city would corrupt the requested direction`);
+          changeSender = false;
+        }
+
         senderTargetCityId = originMatch.id;
         senderTargetCityName = originMatch.name;
 
@@ -225,8 +232,8 @@ export async function executeChangeDirection(
 
         await supabase.from("execution_logs").insert({
           task_id: taskId, action: "change_direction", step: "direction_analysis",
-          request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, origin: originMatch.name, origin_id: originMatch.id, destination: cityName, dest_id: cityId },
-          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, interpretation: "strict_requested_order", reverse_state_detected: senderMatchesDestination && receiverMatchesOrigin },
+          request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, requested_origin: originCity, resolved_origin: originMatch.name, origin_id: originMatch.id, destination: cityName, dest_id: cityId },
+          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, interpretation: "strict_requested_order", reverse_state_detected: senderMatchesDestination && receiverMatchesOrigin, sender_change_skipped_due_to_parent_mapping: originResolution === "mapped_child_to_parent_for_validation" && !senderMatchesOrigin },
           success: true,
         });
       } else {

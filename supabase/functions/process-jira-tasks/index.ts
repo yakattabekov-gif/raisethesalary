@@ -59,7 +59,7 @@ async function dispatchAction(
     if (filtered.length === 0) { commentLines.push(`ℹ️ Смена направления пропущена — заказ будет отменён`); return { results, commentLines }; }
     const r = await executeChangeDirection(supabase, settings, { ...actionItem, invoices: filtered }, taskId, dryRun);
     results.push(...r);
-    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: направление изменено${r.changed ? ` (${r.changed})` : ` на ${r.city || actionItem.city}`}` : `❌ ${r.invoice}: ${r.error}`));
+    r.forEach((r: any) => commentLines.push(r.success ? `✅ ${r.invoice}: ${r.message === "Направление уже соответствует" ? r.message : `направление изменено${r.changed ? ` (${r.changed})` : ` на ${r.city || actionItem.city}`}`}` : `❌ ${r.invoice}: ${r.error}`));
 
   } else if (actionItem.action === "change_shipment_type") {
     const filtered = filterInvoices(actionItem.invoices || []);
