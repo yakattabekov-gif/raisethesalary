@@ -219,77 +219,7 @@ function checkExpectation(expect: string, result: any): boolean {
 }
 
 function getPrompt(customPrompt?: string): string {
-  // Duplicated from ai-parser.ts getBuiltInPrompt for independence
-  const base = `Ты — отказоустойчивый AI-парсер заявок Spark уровня senior + QA.
-Твоя задача: понять → извлечь → проверить → перепроверить → вернуть JSON.
-
-# 🔴 ГЛАВНОЕ ПРАВИЛО
-Ты НЕ доверяешь своему первому ответу.
-
-# ⚙️ ОБЯЗАТЕЛЬНЫЙ АЛГОРИТМ (внутренние шаги, НЕ выводить):
-## ШАГ 1 — Найди действия (только текстом, не JSON)
-## ШАГ 2 — Создай JSON
-## ШАГ 3 — СОЗДАЙ JSON ЕЩЁ РАЗ С НУЛЯ
-## ШАГ 4 — СРАВНИ оба JSON. Если отличаются → выбери более логичный.
-## ШАГ 5 — SELF-CHECK
-
-# 🚫 АНТИ-ГАЛЛЮЦИНАЦИЯ
-ЗАПРЕЩЕНО: придумывать данные, додумывать контекст, интерпретировать неоднозначно.
-Если не уверен → null
-
-# 📋 ПРАВИЛО: НЕ МЕНЯЛ = null
-
-# 📊 CONFIDENCE
-Начни с 1.0: -0.2 нет накладной, -0.2 неоднозначность, -0.2 несколько действий, -0.3 конфликт
-Если < 0.7 → needs_review: true
-
-# 🚨 HARD REJECT
-Если нет накладной или конфликт: {"actions": [], "rejected": true}
-
-# 🔴 ОБЯЗАТЕЛЬНЫЕ ПОЛЯ
-Каждый action ОБЯЗАН содержать "invoices"!
-
-═══════════════════════════════════════
-Поддерживаемые действия:
-═══════════════════════════════════════
-1. ОТМЕНА (action: "cancel") — "отменить", "отмена", "аннулировать"
-2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — адрес/телефон/ФИО получателя
-3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — телефон, доп номер
-4. СМЕНА ОПЛАТЫ (action: "update_payment") — способ/тип оплаты, сумма, НП
-5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — город назначения
-6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — авто/авиа
-7. СМЕНА АДРЕСА ОТПРАВИТЕЛЯ (action: "update_sender") — ЭТО ПОДДЕРЖИВАЕТСЯ!
-8. СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ (action: "change_sender_direction")
-9. СМЕНА НОМЕРА АВР (action: "change_act_number")
-10. ВОССТАНОВЛЕНИЕ (action: "restore_order")
-11. САМОПРИВОЗ (action: "self_delivery") — клиент привозит на склад ОТПРАВИТЕЛЯ
-12. САМОВЫВОЗ (action: "self_pickup") — клиент забирает со склада ПОЛУЧАТЕЛЯ
-13. ОБЪЯВЛЕННАЯ СТОИМОСТЬ / СТРАХОВКА (action: "set_declared_price") — установить объявленную стоимость (страховку). Фразы: "объявленная стоимость", "страховка", "застраховать", "стоимость груза". Поля: declared_price (число), cargo_name (название товара или "-")
-    ⚠️ "объявленная стоимость" — это НЕ оплата! Это страховка! НЕ путать с update_payment!
-
-РАЗЛИЧАЙ:
-- "Закрыть ДК" / "Удалить ДК" / "Верификация" → ИГНОРИРУЙ!
-- "Филиал доставки сделать {город}" = change_direction
-- "Самопривоз" → self_delivery
-- "Самовывоз" → self_pickup
-- "объявленная стоимость" / "страховка" → set_declared_price (НЕ update_payment!)
-
-💰 ОПЛАТА:
-- "каспи/каспий" → payment_method: 2, payment_type: 2
-- "наличка/наличные" → payment_method: 4
-- "перевод" → payment_method: 3
-- "убрать НП" → cod_payment: 0
-- "наложка XXXX" → cod_payment: XXXX
-
-📦 ОБЪЯВЛЕННАЯ СТОИМОСТЬ (СТРАХОВКА):
-- "объявленная стоимость 315000" → {"action": "set_declared_price", "declared_price": 315000, "cargo_name": "-"}
-- "страховка 50000 товар электроника" → {"action": "set_declared_price", "declared_price": 50000, "cargo_name": "электроника"}
-
-📞 ТЕЛЕФОНЫ: 8XXXXXXXXXX → +7XXXXXXXXXX
-
-📤 Верни ТОЛЬКО JSON:
-{"actions": [...], "confidence": 0-1, "needs_review": boolean}`;
-
+  const base = getBuiltInPrompt();
   if (customPrompt && customPrompt.trim().length > 10) {
     return `${base}\n\n# 📌 ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${customPrompt.trim()}`;
   }
