@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/helpers.ts";
+import { getBuiltInPrompt } from "../_shared/ai-parser.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -114,118 +115,119 @@ function checkExpectation(expect: string, result: any): boolean {
   const types = actions.map((a: any) => a.action);
   const ex = expect.toLowerCase();
 
-  if (ex.includes("ignore") || ex.includes("empty actions")) return actions.length === 0;
-  if (ex.includes("cancel") && !types.includes("cancel")) return false;
-  if (ex.includes("update_receiver") && !types.includes("update_receiver")) return false;
-  if (ex.includes("update_sender") && !types.includes("update_sender")) return false;
-  if (ex.includes("update_payment") && !types.includes("update_payment")) return false;
-  if (ex.includes("change_direction") && !types.includes("change_direction")) return false;
-  if (ex.includes("self_delivery") && !types.includes("self_delivery")) return false;
-  if (ex.includes("self_pickup") && !types.includes("self_pickup")) return false;
-  if (ex.includes("set_declared_price") && !types.includes("set_declared_price")) return false;
-  if (ex.includes("change_shipment_type") && !types.includes("change_shipment_type")) return false;
-  if (ex.includes("restore_order") && !types.includes("restore_order")) return false;
-  if (ex.includes("3 invoices")) {
-    const allInvoices = actions.flatMap((a: any) => a.invoices || []);
-    if (allInvoices.length < 3) return false;
-  }
-  if (ex.includes("2x")) {
-    const relevantType = ex.includes("payment") ? "update_payment" : null;
-    if (relevantType && types.filter((t: string) => t === relevantType).length < 2) return false;
-  }
-  if (ex.includes("method=2")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.payment_method !== 2) return false;
-  }
-  if (ex.includes("method=4")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.payment_method !== 4) return false;
-  }
-  if (ex.includes("cod=0")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.cod_payment !== 0) return false;
-  }
-  if (ex.includes("cod=50000")) {
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.cod_payment !== 50000) return false;
+  // Empty/ignore checks
+  if (ex.includes("ignore") || ex.includes("empty actions") || ex.includes("rejected")) {
+    return actions.length === 0 || result.rejected === true;
   }
 
-  // Basic: at least has the expected action type
+  // Action type checks — support "NOT" prefix
+  const actionChecks: [string, string][] = [
+    ["cancel", "cancel"],
+    ["update_receiver", "update_receiver"],
+    ["update_sender", "update_sender"],
+    ["update_payment", "update_payment"],
+    ["change_direction", "change_direction"],
+    ["change_sender_direction", "change_sender_direction"],
+    ["self_delivery", "self_delivery"],
+    ["self_pickup", "self_pickup"],
+    ["set_declared_price", "set_declared_price"],
+    ["change_shipment_type", "change_shipment_type"],
+    ["restore_order", "restore_order"],
+    ["change_act_number", "change_act_number"],
+  ];
+
+  for (const [keyword, actionType] of actionChecks) {
+    if (ex.includes(`not ${keyword}`)) {
+      if (types.includes(actionType)) return false;
+    } else if (ex.includes(keyword)) {
+      if (!types.includes(actionType)) return false;
+    }
+  }
+
+  // Invoice count checks
+  const invoiceCountMatch = ex.match(/(\d+)\s*invoices?/);
+  if (invoiceCountMatch) {
+    const expected = parseInt(invoiceCountMatch[1]);
+    const allInvoices = actions.flatMap((a: any) => a.invoices || []);
+    if (allInvoices.length < expected) return false;
+  }
+
+  // Multiple action checks (2x, 3x)
+  const multiMatch = ex.match(/(\d+)x\s*(\w+)/);
+  if (multiMatch) {
+    const count = parseInt(multiMatch[1]);
+    const type = multiMatch[2];
+    if (types.filter((t: string) => t === type).length < count) return false;
+  }
+
+  // Payment field checks — look in both action.payment and action itself (AI sometimes uses flat structure)
+  function getPaymentField(fieldName: string): any {
+    const paymentAction = actions.find((a: any) => a.action === "update_payment");
+    if (!paymentAction) return undefined;
+    // Check nested payment object first, then flat action
+    return paymentAction.payment?.[fieldName] ?? paymentAction[fieldName] ?? undefined;
+  }
+
+  const methodMatch = ex.match(/method=(\d+)/);
+  if (methodMatch) {
+    const expected = parseInt(methodMatch[1]);
+    const val = getPaymentField("payment_method");
+    if (val !== expected) return false;
+  }
+  const typeMatch = ex.match(/type=(\d+)/);
+  if (typeMatch) {
+    const expected = parseInt(typeMatch[1]);
+    const val = getPaymentField("payment_type");
+    if (val !== expected) return false;
+  }
+  const codMatch = ex.match(/cod=(\d+)/);
+  if (codMatch) {
+    const expected = parseInt(codMatch[1]);
+    const val = getPaymentField("cod_payment");
+    if (val !== expected) return false;
+  }
+  const cashMatch = ex.match(/cash=(\d+)/);
+  if (cashMatch) {
+    const expected = parseInt(cashMatch[1]);
+    // Check cash_sum and amount (AI sometimes uses "amount")
+    const val = getPaymentField("cash_sum") ?? getPaymentField("amount");
+    if (val !== expected) return false;
+  }
+
+  // City checks
+  const cityMatch = ex.match(/city="([^"]+)"/);
+  if (cityMatch) {
+    const expectedCity = cityMatch[1].toLowerCase();
+    const hasCity = actions.some((a: any) => 
+      (a.city && a.city.toLowerCase().includes(expectedCity)) ||
+      (a.to_city && a.to_city.toLowerCase().includes(expectedCity))
+    );
+    if (!hasCity) return false;
+  }
+
+  // from_city check
+  const fromCityMatch = ex.match(/from_city="([^"]+)"/);
+  if (fromCityMatch) {
+    const expectedFrom = fromCityMatch[1].toLowerCase();
+    const hasFrom = actions.some((a: any) => 
+      a.from_city && a.from_city.toLowerCase().includes(expectedFrom)
+    );
+    if (!hasFrom) return false;
+  }
+
+  // declared_price check
+  const priceMatch = ex.match(/price=(\d+)/);
+  if (priceMatch) {
+    const expected = parseInt(priceMatch[1]);
+    const hasPrice = actions.some((a: any) => a.declared_price === expected);
+    if (!hasPrice) return false;
+  }
+
   return actions.length > 0 || ex.includes("ignore");
 }
 
 function getPrompt(customPrompt?: string): string {
-  // Duplicated from ai-parser.ts getBuiltInPrompt for independence
-  const base = `Ты — отказоустойчивый AI-парсер заявок Spark уровня senior + QA.
-Твоя задача: понять → извлечь → проверить → перепроверить → вернуть JSON.
-
-# 🔴 ГЛАВНОЕ ПРАВИЛО
-Ты НЕ доверяешь своему первому ответу.
-
-# ⚙️ ОБЯЗАТЕЛЬНЫЙ АЛГОРИТМ (внутренние шаги, НЕ выводить):
-## ШАГ 1 — Найди действия (только текстом, не JSON)
-## ШАГ 2 — Создай JSON
-## ШАГ 3 — СОЗДАЙ JSON ЕЩЁ РАЗ С НУЛЯ
-## ШАГ 4 — СРАВНИ оба JSON. Если отличаются → выбери более логичный.
-## ШАГ 5 — SELF-CHECK
-
-# 🚫 АНТИ-ГАЛЛЮЦИНАЦИЯ
-ЗАПРЕЩЕНО: придумывать данные, додумывать контекст, интерпретировать неоднозначно.
-Если не уверен → null
-
-# 📋 ПРАВИЛО: НЕ МЕНЯЛ = null
-
-# 📊 CONFIDENCE
-Начни с 1.0: -0.2 нет накладной, -0.2 неоднозначность, -0.2 несколько действий, -0.3 конфликт
-Если < 0.7 → needs_review: true
-
-# 🚨 HARD REJECT
-Если нет накладной или конфликт: {"actions": [], "rejected": true}
-
-# 🔴 ОБЯЗАТЕЛЬНЫЕ ПОЛЯ
-Каждый action ОБЯЗАН содержать "invoices"!
-
-═══════════════════════════════════════
-Поддерживаемые действия:
-═══════════════════════════════════════
-1. ОТМЕНА (action: "cancel") — "отменить", "отмена", "аннулировать"
-2. СМЕНА АДРЕСА ДОСТАВКИ (action: "update_receiver") — адрес/телефон/ФИО получателя
-3. СМЕНА ДАННЫХ ПОЛУЧАТЕЛЯ (action: "update_receiver") — телефон, доп номер
-4. СМЕНА ОПЛАТЫ (action: "update_payment") — способ/тип оплаты, сумма, НП
-5. СМЕНА НАПРАВЛЕНИЯ (action: "change_direction") — город назначения
-6. СМЕНА ТИПА ПЕРЕВОЗКИ (action: "change_shipment_type") — авто/авиа
-7. СМЕНА АДРЕСА ОТПРАВИТЕЛЯ (action: "update_sender") — ЭТО ПОДДЕРЖИВАЕТСЯ!
-8. СМЕНА НАПРАВЛЕНИЯ ОТПРАВИТЕЛЯ (action: "change_sender_direction")
-9. СМЕНА НОМЕРА АВР (action: "change_act_number")
-10. ВОССТАНОВЛЕНИЕ (action: "restore_order")
-11. САМОПРИВОЗ (action: "self_delivery") — клиент привозит на склад ОТПРАВИТЕЛЯ
-12. САМОВЫВОЗ (action: "self_pickup") — клиент забирает со склада ПОЛУЧАТЕЛЯ
-13. ОБЪЯВЛЕННАЯ СТОИМОСТЬ / СТРАХОВКА (action: "set_declared_price") — установить объявленную стоимость (страховку). Фразы: "объявленная стоимость", "страховка", "застраховать", "стоимость груза". Поля: declared_price (число), cargo_name (название товара или "-")
-    ⚠️ "объявленная стоимость" — это НЕ оплата! Это страховка! НЕ путать с update_payment!
-
-РАЗЛИЧАЙ:
-- "Закрыть ДК" / "Удалить ДК" / "Верификация" → ИГНОРИРУЙ!
-- "Филиал доставки сделать {город}" = change_direction
-- "Самопривоз" → self_delivery
-- "Самовывоз" → self_pickup
-- "объявленная стоимость" / "страховка" → set_declared_price (НЕ update_payment!)
-
-💰 ОПЛАТА:
-- "каспи/каспий" → payment_method: 2, payment_type: 2
-- "наличка/наличные" → payment_method: 4
-- "перевод" → payment_method: 3
-- "убрать НП" → cod_payment: 0
-- "наложка XXXX" → cod_payment: XXXX
-
-📦 ОБЪЯВЛЕННАЯ СТОИМОСТЬ (СТРАХОВКА):
-- "объявленная стоимость 315000" → {"action": "set_declared_price", "declared_price": 315000, "cargo_name": "-"}
-- "страховка 50000 товар электроника" → {"action": "set_declared_price", "declared_price": 50000, "cargo_name": "электроника"}
-
-📞 ТЕЛЕФОНЫ: 8XXXXXXXXXX → +7XXXXXXXXXX
-
-📤 Верни ТОЛЬКО JSON:
-{"actions": [...], "confidence": 0-1, "needs_review": boolean}`;
-
+  const base = getBuiltInPrompt();
   if (customPrompt && customPrompt.trim().length > 10) {
     return `${base}\n\n# 📌 ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${customPrompt.trim()}`;
   }
