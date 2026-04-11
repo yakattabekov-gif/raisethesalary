@@ -1,4 +1,4 @@
-export const VERSION = "v2.16.1";
+export const VERSION = "v2.16.2";
 export const TELEGRAM_CHAT_ID = "6645078966";
 
 export function delay(ms: number): Promise<void> {
