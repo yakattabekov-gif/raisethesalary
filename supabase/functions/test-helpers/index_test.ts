@@ -457,8 +457,11 @@ Deno.test("SH-45833: parent fallback can validate pair but must not force sender
   const originMatch = findCity("Усть-Каменогорск", mockCities);
   assertEquals(originMatch?.id, 17);
 
-  const senderMatchesMappedParent = 17 === originMatch?.id;
-  const receiverMatchesDestination = 275 === 3;
+  const currentSenderCityId = 17;
+  const currentReceiverCityId = 275;
+  const destinationCityId = 3;
+  const senderMatchesMappedParent = currentSenderCityId === originMatch?.id;
+  const receiverMatchesDestination = currentReceiverCityId === destinationCityId;
 
   assert(senderMatchesMappedParent);
   assertEquals(receiverMatchesDestination, false);
