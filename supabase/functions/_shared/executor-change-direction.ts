@@ -176,56 +176,35 @@ export async function executeChangeDirection(
       let receiverTargetCityName = cityName;
 
       if (originMatch) {
-        // Smart comparison: compare both city IDs against sender and receiver
-        const c1MatchesSender = senderCityId === originMatch.id;
-        const c1MatchesReceiver = receiverCityId === originMatch.id;
-        const c2MatchesSender = senderCityId === cityId;
-        const c2MatchesReceiver = receiverCityId === cityId;
+        const senderMatchesOrigin = senderCityId === originMatch.id;
+        const receiverMatchesDestination = receiverCityId === cityId;
+        const receiverMatchesOrigin = receiverCityId === originMatch.id;
+        const senderMatchesDestination = senderCityId === cityId;
 
-        console.log(`[${VERSION}] Smart comparison: origin(${originMatch.id})↔sender(${senderCityId})=${c1MatchesSender}, origin↔receiver(${receiverCityId})=${c1MatchesReceiver}, dest(${cityId})↔sender=${c2MatchesSender}, dest↔receiver=${c2MatchesReceiver}`);
+        console.log(
+          `[${VERSION}] Strict direction check: sender(${senderCityId})===origin(${originMatch.id})=${senderMatchesOrigin}, receiver(${receiverCityId})===dest(${cityId})=${receiverMatchesDestination}, sender===dest=${senderMatchesDestination}, receiver===origin=${receiverMatchesOrigin}`
+        );
 
-        // Check if direction already matches (either order)
-        if ((c1MatchesSender && c2MatchesReceiver) || (c2MatchesSender && c1MatchesReceiver)) {
-          results.push({ invoice, success: true, city: cityName, message: "Направление уже соответствует" });
+        // IMPORTANT: when origin and destination are both known, respect the requested order exactly.
+        // Requested pair means: sender must be in origin city, receiver must be in destination city.
+        // Reverse direction is NOT considered "already matches".
+        if (senderMatchesOrigin && receiverMatchesDestination) {
+          results.push({ invoice, success: true, city: `${originMatch.name} - ${cityName}`, message: "Направление уже соответствует" });
           continue;
         }
 
-        // Determine best interpretation
-        // A: origin=sender, dest=receiver (standard)
-        // B: origin=receiver, dest=sender (reversed)
-        const matchesA = (c1MatchesSender ? 1 : 0) + (c2MatchesReceiver ? 1 : 0);
-        const matchesB = (c2MatchesSender ? 1 : 0) + (c1MatchesReceiver ? 1 : 0);
+        changeSender = !senderMatchesOrigin;
+        senderTargetCityId = originMatch.id;
+        senderTargetCityName = originMatch.name;
 
-        if (matchesA >= matchesB) {
-          // Standard: origin→sender, dest→receiver
-          if (!c1MatchesSender) {
-            changeSender = true;
-            senderTargetCityId = originMatch.id;
-            senderTargetCityName = originMatch.name;
-          }
-          if (!c2MatchesReceiver) {
-            changeReceiver = true;
-            receiverTargetCityId = cityId;
-            receiverTargetCityName = cityName;
-          }
-        } else {
-          // Reversed: dest→sender, origin→receiver
-          if (!c2MatchesSender) {
-            changeSender = true;
-            senderTargetCityId = cityId;
-            senderTargetCityName = cityName;
-          }
-          if (!c1MatchesReceiver) {
-            changeReceiver = true;
-            receiverTargetCityId = originMatch.id;
-            receiverTargetCityName = originMatch.name;
-          }
-        }
+        changeReceiver = !receiverMatchesDestination;
+        receiverTargetCityId = cityId;
+        receiverTargetCityName = cityName;
 
         await supabase.from("execution_logs").insert({
           task_id: taskId, action: "change_direction", step: "direction_analysis",
           request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, origin: originMatch.name, origin_id: originMatch.id, destination: cityName, dest_id: cityId },
-          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, interpretation: matchesA >= matchesB ? "standard" : "reversed" },
+          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, interpretation: "strict_requested_order", reverse_state_detected: senderMatchesDestination && receiverMatchesOrigin },
           success: true,
         });
       } else {
