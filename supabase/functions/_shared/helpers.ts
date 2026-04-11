@@ -128,9 +128,24 @@ export function findCity(name: string, allCities: any[]): { id: number; name: st
   const normalizedTarget = normalizeCityName(name);
   let bestMatch: any = null;
   let bestScore = Infinity;
+
   for (const city of allCities) {
     const normalizedName = normalizeCityName(city.name);
     if (normalizedName === normalizedTarget) return city;
+
+    const targetWords = normalizedTarget.split(" ").filter(Boolean);
+    const cityWords = normalizedName.split(" ").filter(Boolean);
+    const hasStrongWordOverlap = targetWords.some((word) => word.length >= 5 && cityWords.includes(word));
+    if (
+      hasStrongWordOverlap ||
+      normalizedTarget.startsWith(`${normalizedName} `) ||
+      normalizedTarget.endsWith(` ${normalizedName}`) ||
+      normalizedName.startsWith(`${normalizedTarget} `) ||
+      normalizedName.endsWith(` ${normalizedTarget}`)
+    ) {
+      return city;
+    }
+
     const dist = levenshtein(normalizedTarget, normalizedName);
     const maxLen = Math.max(normalizedTarget.length, normalizedName.length);
     const similarity = 1 - dist / maxLen;

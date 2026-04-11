@@ -58,8 +58,8 @@ export async function executeChangeDirection(
   }
 
   // Resolve origin city if provided.
-  // If exact/fuzzy match is missing in spark_cities, try allowed_directions child->parent mapping
-  // so requests like "Урджар - Семей" still update sender city to the parent direction city.
+  // IMPORTANT: preserve the requested sender city itself whenever it exists in spark_cities.
+  // Only fall back to allowed_directions child->parent when the origin city truly does not exist.
   let originMatch: { id: number; name: string } | null = null;
   let originResolution: "direct" | "mapped_child_to_parent" | "missing" = "missing";
   if (originCity) {
@@ -80,7 +80,7 @@ export async function executeChangeDirection(
         if (mappedOrigin) {
           originMatch = mappedOrigin;
           originResolution = "mapped_child_to_parent";
-          console.log(`[${VERSION}] Origin city "${originCity}" mapped via allowed_directions to parent "${mappedParentCity}" → id=${mappedOrigin.id}, name="${mappedOrigin.name}"`);
+          console.log(`[${VERSION}] Origin city "${originCity}" not found directly, mapped via allowed_directions to parent "${mappedParentCity}" → id=${mappedOrigin.id}, name="${mappedOrigin.name}"`);
         }
       }
 
