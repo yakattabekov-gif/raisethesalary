@@ -1,0 +1,1 @@
+UPDATE public.processed_tasks SET status = 'pending', execution_result = NULL, retry_count = 0, updated_at = now() WHERE jira_issue_key = 'SH-45833';
