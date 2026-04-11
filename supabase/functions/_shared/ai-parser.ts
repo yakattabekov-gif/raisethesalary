@@ -437,7 +437,7 @@ export async function parseWithAI(
 }
 
 // ---- Built-in prompt (extracted for reuse) ----
-function getBuiltInPrompt(): string {
+export function getBuiltInPrompt(): string {
   return `Ты — отказоустойчивый AI-парсер заявок Spark уровня senior + QA.
 Твоя задача: понять → извлечь → проверить → перепроверить → вернуть JSON.
 
