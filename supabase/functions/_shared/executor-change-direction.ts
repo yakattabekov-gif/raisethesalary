@@ -211,19 +211,19 @@ export async function executeChangeDirection(
         // Requested pair means: sender must be in origin city, receiver must be in destination city.
         // Reverse direction is NOT considered "already matches".
         if (senderMatchesOrigin && receiverMatchesDestination) {
-          results.push({ invoice, success: true, city: `${originMatch.name} - ${cityName}`, message: "Направление уже соответствует" });
+          results.push({ invoice, success: true, city: `${originCity || originMatch.name} - ${cityName}`, message: "Направление уже соответствует" });
           continue;
         }
 
-         changeSender = !senderMatchesOrigin;
+        changeSender = !senderMatchesOrigin;
 
-         if (changeSender && originResolution === "mapped_child_to_parent_for_validation") {
-           console.warn(`[${VERSION}] Sender change skipped: requested origin "${originCity}" was resolved only via parent mapping "${originMatch.name}"; applying parent city would corrupt the requested direction`);
-           changeSender = false;
-         }
+        if (changeSender && originResolution === "mapped_child_to_parent_for_validation") {
+          console.warn(`[${VERSION}] Sender change skipped: requested origin "${originCity}" was resolved only via parent mapping "${originMatch.name}"; applying parent city would corrupt the requested direction`);
+          changeSender = false;
+        }
 
-         senderTargetCityId = originMatch.id;
-         senderTargetCityName = originMatch.name;
+        senderTargetCityId = originMatch.id;
+        senderTargetCityName = originMatch.name;
 
         changeReceiver = !receiverMatchesDestination;
         receiverTargetCityId = cityId;
@@ -231,8 +231,8 @@ export async function executeChangeDirection(
 
         await supabase.from("execution_logs").insert({
           task_id: taskId, action: "change_direction", step: "direction_analysis",
-          request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, origin: originMatch.name, origin_id: originMatch.id, destination: cityName, dest_id: cityId },
-           response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, interpretation: "strict_requested_order", reverse_state_detected: senderMatchesDestination && receiverMatchesOrigin, sender_change_skipped_due_to_parent_mapping: originResolution === "mapped_child_to_parent_for_validation" && !senderMatchesOrigin },
+          request_data: { sender_city: senderCityName, sender_city_id: senderCityId, receiver_city: receiverCityName, receiver_city_id: receiverCityId, requested_origin: originCity, resolved_origin: originMatch.name, origin_id: originMatch.id, destination: cityName, dest_id: cityId },
+          response_data: { change_sender: changeSender, change_receiver: changeReceiver, sender_target: senderTargetCityName, receiver_target: receiverTargetCityName, interpretation: "strict_requested_order", reverse_state_detected: senderMatchesDestination && receiverMatchesOrigin, sender_change_skipped_due_to_parent_mapping: originResolution === "mapped_child_to_parent_for_validation" && !senderMatchesOrigin },
           success: true,
         });
       } else {
