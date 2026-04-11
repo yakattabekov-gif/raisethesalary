@@ -160,30 +160,38 @@ function checkExpectation(expect: string, result: any): boolean {
     if (types.filter((t: string) => t === type).length < count) return false;
   }
 
-  // Payment field checks
+  // Payment field checks — look in both action.payment and action itself (AI sometimes uses flat structure)
+  function getPaymentField(fieldName: string): any {
+    const paymentAction = actions.find((a: any) => a.action === "update_payment");
+    if (!paymentAction) return undefined;
+    // Check nested payment object first, then flat action
+    return paymentAction.payment?.[fieldName] ?? paymentAction[fieldName] ?? undefined;
+  }
+
   const methodMatch = ex.match(/method=(\d+)/);
   if (methodMatch) {
     const expected = parseInt(methodMatch[1]);
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.payment_method !== expected) return false;
+    const val = getPaymentField("payment_method");
+    if (val !== expected) return false;
   }
   const typeMatch = ex.match(/type=(\d+)/);
   if (typeMatch) {
     const expected = parseInt(typeMatch[1]);
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.payment_type !== expected) return false;
+    const val = getPaymentField("payment_type");
+    if (val !== expected) return false;
   }
   const codMatch = ex.match(/cod=(\d+)/);
   if (codMatch) {
     const expected = parseInt(codMatch[1]);
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.cod_payment !== expected) return false;
+    const val = getPaymentField("cod_payment");
+    if (val !== expected) return false;
   }
   const cashMatch = ex.match(/cash=(\d+)/);
   if (cashMatch) {
     const expected = parseInt(cashMatch[1]);
-    const payment = actions.find((a: any) => a.action === "update_payment")?.payment;
-    if (!payment || payment.cash_sum !== expected) return false;
+    // Check cash_sum and amount (AI sometimes uses "amount")
+    const val = getPaymentField("cash_sum") ?? getPaymentField("amount");
+    if (val !== expected) return false;
   }
 
   // City checks
