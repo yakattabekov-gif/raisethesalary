@@ -10,6 +10,7 @@ import {
   resolveShipmentType,
   levenshtein,
 } from "../_shared/helpers.ts";
+import { loadAllSparkCities } from "../_shared/load-spark-cities.ts";
 
 // ========== normalizePhone ==========
 
@@ -177,6 +178,40 @@ Deno.test("findCity: Шымкент exact", () => {
 Deno.test("findCity: empty string returns null", () => {
   const result = findCity("", mockCities);
   assertEquals(result, null);
+});
+
+Deno.test("loadAllSparkCities: loads all rows beyond default 1000-row limit", async () => {
+  const source = Array.from({ length: 2559 }, (_, index) => ({
+    id: index + 1,
+    name: index === 594 ? "Урджар" : `Город ${index + 1}`,
+  }));
+
+  const supabaseMock = {
+    from(table: string) {
+      assertEquals(table, "spark_cities");
+      return {
+        select(columns: string) {
+          assertEquals(columns, "id, name");
+          return {
+            order(column: string) {
+              assertEquals(column, "id");
+              return {
+                async range(from: number, to: number) {
+                  return { data: source.slice(from, to + 1), error: null };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  const allCities = await loadAllSparkCities(supabaseMock as any);
+
+  assertEquals(allCities.length, 2559);
+  assertEquals(allCities[594].name, "Урджар");
+  assertEquals(allCities[2558].id, 2559);
 });
 
 // ========== stripCityFromAddress ==========

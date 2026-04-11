@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, levenshtein, normalizeCityName, findCity, stripCityFromAddress } from "./helpers.ts";
+import { loadAllSparkCities } from "./load-spark-cities.ts";
 
 export async function executeChangeDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -42,7 +43,7 @@ export async function executeChangeDirection(
   }
 
   // Load all cities
-  const { data: allCities } = await supabase.from("spark_cities").select("id, name");
+  const allCities = await loadAllSparkCities(supabase);
   if (!allCities || allCities.length === 0) {
     return invoices.map((inv: string) => ({ invoice: inv, success: false, error: "Справочник городов пуст" }));
   }
