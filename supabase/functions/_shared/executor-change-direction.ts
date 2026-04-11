@@ -9,13 +9,16 @@ export async function executeChangeDirection(
   const invoices = aiResult.invoices || [];
   
   // Support both formats: { city: "Алматы - Калбатау" } and { from_city: "Алматы", to_city: "Калбатау" }
-  let targetCity = aiResult.city;
-  if (!targetCity && aiResult.from_city && aiResult.to_city) {
+  // IMPORTANT: Prioritize from_city/to_city over city to preserve full direction info
+  let targetCity: string | undefined;
+  if (aiResult.from_city && aiResult.to_city) {
     targetCity = `${aiResult.from_city} - ${aiResult.to_city}`;
     console.log(`[${VERSION}] Constructed city pair from from_city/to_city: "${targetCity}"`);
-  } else if (!targetCity && aiResult.to_city) {
+  } else if (aiResult.to_city) {
     targetCity = aiResult.to_city;
     console.log(`[${VERSION}] Using to_city as target: "${targetCity}"`);
+  } else {
+    targetCity = aiResult.city;
   }
 
   if (!targetCity) {
