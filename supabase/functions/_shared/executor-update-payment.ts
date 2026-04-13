@@ -76,15 +76,10 @@ export async function executeUpdatePayment(
       const originalPaymentType = resolvePaymentType(logisticsInfo.payment_type);
       const originalPaymentMethod = resolvePaymentMethod(logisticsInfo.payment_method);
 
-      // cod_payment: only change if mutable AND this is a COD-specific change (isCodOnly)
-      // OR if AI explicitly provided a positive cod_payment value
-      // NEVER send 0 for cod_payment unless explicitly asked to remove НП (isCodOnly with cod_payment=0)
-      if (isCodOnly && isFieldMutable(mutable, "cod_payment") && hasCodPayment) {
-        // Explicit COD change (add/remove НП)
+      // cod_payment: apply whenever AI explicitly provided a value and field is mutable
+      if (isFieldMutable(mutable, "cod_payment") && hasCodPayment) {
         updatePayload.cod_payment = Number(paymentData.cod_payment);
-      } else if (!isCodOnly && isFieldMutable(mutable, "cod_payment") && hasCodPayment && Number(paymentData.cod_payment) > 0) {
-        // Non-COD change but AI provided a positive cod_payment — apply it
-        updatePayload.cod_payment = Number(paymentData.cod_payment);
+        console.log(`[${VERSION}] update_payment ${invoice}: setting cod_payment=${updatePayload.cod_payment} (AI explicit)`);
       } else {
         // Preserve original cod_payment
         updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
