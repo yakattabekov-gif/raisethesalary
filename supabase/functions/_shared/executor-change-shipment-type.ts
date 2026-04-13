@@ -1,4 +1,5 @@
 import { VERSION, parseStatusHistory, searchInvoice, getLogisticsInfo, resolveShipmentType } from "./helpers.ts";
+import { verifyLogisticsInfoChange } from "./verify-change.ts";
 
 export async function executeChangeShipmentType(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean

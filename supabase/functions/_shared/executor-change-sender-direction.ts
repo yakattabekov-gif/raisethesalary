@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, checkSenderStatusAllowed, findCity, normalizeCityName, stripCityFromAddress } from "./helpers.ts";
+import { verifyReceiverChange, verifySenderChange } from "./verify-change.ts";
 
 export async function executeChangeSenderDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean

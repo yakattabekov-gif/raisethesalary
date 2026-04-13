@@ -1,5 +1,6 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, levenshtein, normalizeCityName, findCity, stripCityFromAddress } from "./helpers.ts";
 import { loadAllSparkCities } from "./load-spark-cities.ts";
+import { verifyReceiverChange, verifySenderChange } from "./verify-change.ts";
 
 export async function executeChangeDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean

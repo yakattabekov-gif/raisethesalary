@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, checkSenderStatusAllowed } from "./helpers.ts";
+import { verifySenderChange } from "./verify-change.ts";
 
 export async function executeUpdateSender(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean

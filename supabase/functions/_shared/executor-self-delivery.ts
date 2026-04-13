@@ -1,4 +1,5 @@
 import { VERSION, searchInvoice, getLogisticsInfo, checkSenderStatusAllowed } from "./helpers.ts";
+import { verifySenderChange } from "./verify-change.ts";
 
 /**
  * Самопривоз (self_delivery) — sets warehouse on SENDER.

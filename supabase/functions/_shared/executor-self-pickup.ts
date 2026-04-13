@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, checkOrderRestored } from "./helpers.ts";
+import { verifyReceiverChange } from "./verify-change.ts";
 
 /**
  * Самовывоз (self_pickup) — sets warehouse on RECEIVER.

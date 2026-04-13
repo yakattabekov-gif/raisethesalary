@@ -1,4 +1,5 @@
 import { VERSION, searchInvoice, getLogisticsInfo, resolveShipmentType, resolvePaymentType, resolvePaymentMethod, getMutableFields, isFieldMutable } from "./helpers.ts";
+import { verifyLogisticsInfoChange } from "./verify-change.ts";
 
 export async function executeUpdatePayment(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean

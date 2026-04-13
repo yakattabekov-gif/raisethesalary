@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, checkOrderRestored } from "./helpers.ts";
+import { verifyReceiverChange } from "./verify-change.ts";
 
 export async function executeUpdateReceiver(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -219,6 +220,22 @@ export async function executeUpdateReceiver(
         request_data: { endpoint: `PUT ${sparkUrl}/receivers/${receiver.id}`, body: updatePayload },
         response_data: { status: updateResp.status }, success: true,
       });
+
+      // Verify changes actually applied
+      const verifyFields: Record<string, any> = {};
+      if (afterState.street !== undefined) verifyFields.street = updatePayload.street;
+      if (afterState.house !== undefined) verifyFields.house = updatePayload.house;
+      if (afterState.city_id !== undefined) verifyFields.city_id = updatePayload.city_id;
+      if (afterState.full_name !== undefined) verifyFields.full_name = updatePayload.full_name;
+      if (afterState.phone !== undefined) verifyFields.phone = updatePayload.phone;
+      
+      if (Object.keys(verifyFields).length > 0) {
+        const verification = await verifyReceiverChange(sparkUrl, sparkToken, item.id, verifyFields, supabase, taskId, "update_receiver");
+        if (!verification.verified) {
+          results.push({ invoice, success: false, error: `API вернул 200, но изменения не применились: ${verification.mismatches.join("; ")}`, before: beforeState, after: afterState });
+          continue;
+        }
+      }
 
       results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
