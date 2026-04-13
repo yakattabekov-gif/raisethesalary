@@ -206,6 +206,21 @@ export async function executeUpdateSender(
         response_data: { status: updateResp.status }, success: true,
       });
 
+      // Verify changes
+      const verifyFields: Record<string, any> = {};
+      if (afterState.street !== undefined) verifyFields.street = updatePayload.street;
+      if (afterState.house !== undefined) verifyFields.house = updatePayload.house;
+      if (afterState.full_name !== undefined) verifyFields.full_name = updatePayload.full_name;
+      if (afterState.phone !== undefined) verifyFields.phone = updatePayload.phone;
+      
+      if (Object.keys(verifyFields).length > 0) {
+        const verification = await verifySenderChange(sparkUrl, sparkToken, item.id, verifyFields, supabase, taskId, "update_sender");
+        if (!verification.verified) {
+          results.push({ invoice, success: false, error: `API вернул 200, но изменения не применились: ${verification.mismatches.join("; ")}`, before: beforeState, after: afterState });
+          continue;
+        }
+      }
+
       results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({

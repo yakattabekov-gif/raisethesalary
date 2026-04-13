@@ -195,6 +195,13 @@ export async function executeSelfPickup(
         response_data: { status: updateResp.status }, success: true,
       });
 
+      // Verify warehouse assignment
+      const verification = await verifyReceiverChange(sparkUrl, sparkToken, item.id, { warehouse_id: warehouse.id, city_id: targetCityId }, supabase, taskId, "self_pickup");
+      if (!verification.verified) {
+        results.push({ invoice, success: false, error: `API вернул 200, но самовывоз не применился: ${verification.mismatches.join("; ")}`, before: beforeState, after: afterState });
+        continue;
+      }
+
       results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({

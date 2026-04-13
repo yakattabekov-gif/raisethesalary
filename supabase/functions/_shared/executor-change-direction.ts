@@ -321,6 +321,12 @@ export async function executeChangeDirection(
             request_data: { endpoint: `PUT ${sparkUrl}/receivers/${receiver.id}`, body: receiverPayload },
             response_data: { status: updateResp.status }, success: true,
           });
+
+          // Verify receiver city change
+          const recVerify = await verifyReceiverChange(sparkUrl, sparkToken, item.id, { city_id: Number(receiverTargetCityId) }, supabase, taskId, "change_direction");
+          if (!recVerify.verified) {
+            throw new Error(`Верификация получателя не прошла: ${recVerify.mismatches.join("; ")}`);
+          }
         }
       }
 

@@ -159,6 +159,20 @@ export async function executeUpdatePayment(
         response_data: { status: updateResp.status }, success: true,
       });
 
+      // Verify payment changes
+      const verifyFields: Record<string, any> = {};
+      if (afterState.payment_type !== beforeState.payment_type) verifyFields.payment_type = updatePayload.payment_type;
+      if (afterState.payment_method !== beforeState.payment_method) verifyFields.payment_method = updatePayload.payment_method;
+      if (afterState.cod_payment !== beforeState.cod_payment) verifyFields.cod_payment = updatePayload.cod_payment;
+
+      if (Object.keys(verifyFields).length > 0) {
+        const verification = await verifyLogisticsInfoChange(sparkUrl, sparkToken, item.id, verifyFields, supabase, taskId, "update_payment");
+        if (!verification.verified) {
+          results.push({ invoice, success: false, error: `API вернул 200, но изменения не применились: ${verification.mismatches.join("; ")}`, before: beforeState, after: afterState });
+          continue;
+        }
+      }
+
       results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {
       await supabase.from("execution_logs").insert({
