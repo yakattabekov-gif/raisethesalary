@@ -51,9 +51,9 @@ async function compareFields(
     const actualValue = actualData[key];
     actual[key] = actualValue;
 
-    // Normalize for comparison
-    const normalizedExpected = normalize(expectedValue);
-    const normalizedActual = normalize(actualValue);
+    // Normalize for comparison, passing field name for type-aware resolution
+    const normalizedExpected = normalize(expectedValue, key);
+    const normalizedActual = normalize(actualValue, key);
 
     if (normalizedExpected !== normalizedActual) {
       mismatches.push(`${key}: expected=${JSON.stringify(expectedValue)}, actual=${JSON.stringify(actualValue)}`);
