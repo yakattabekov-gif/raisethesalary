@@ -1,4 +1,4 @@
-import { VERSION, getLogisticsInfo } from "./helpers.ts";
+import { VERSION, getLogisticsInfo, resolvePaymentType, resolvePaymentMethod, resolveShipmentType } from "./helpers.ts";
 
 /**
  * After a PUT to /receivers/{id} or /senders/{id}, re-fetch logistics-info
