@@ -1,4 +1,5 @@
 import { VERSION, parseStatusHistory, searchInvoice, getLogisticsInfo, resolveShipmentType } from "./helpers.ts";
+import { verifyLogisticsInfoChange } from "./verify-change.ts";
 
 export async function executeChangeShipmentType(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -114,6 +115,13 @@ export async function executeChangeShipmentType(
         request_data: { endpoint: `PUT ${sparkUrl}/logistics-info/${item.id}`, body: updatePayload },
         response_data: { status: updateResp.status, changes: afterState }, success: true,
       });
+
+      // Verify shipment type change
+      const verification = await verifyLogisticsInfoChange(sparkUrl, sparkToken, item.id, { shipment_type: newShipmentType }, supabase, taskId, "change_shipment_type");
+      if (!verification.verified) {
+        results.push({ invoice, success: false, error: `API вернул 200, но тип перевозки не изменился: ${verification.mismatches.join("; ")}`, before: beforeState, after: afterState });
+        continue;
+      }
 
       results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {

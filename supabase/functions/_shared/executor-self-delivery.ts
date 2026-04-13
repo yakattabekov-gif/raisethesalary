@@ -1,4 +1,5 @@
 import { VERSION, searchInvoice, getLogisticsInfo, checkSenderStatusAllowed } from "./helpers.ts";
+import { verifySenderChange } from "./verify-change.ts";
 
 /**
  * Самопривоз (self_delivery) — sets warehouse on SENDER.
@@ -187,6 +188,13 @@ export async function executeSelfDelivery(
         request_data: { endpoint: `PUT ${sparkUrl}/senders/${sender.id}`, body: updatePayload },
         response_data: { status: updateResp.status }, success: true,
       });
+
+      // Verify warehouse assignment
+      const verification = await verifySenderChange(sparkUrl, sparkToken, item.id, { warehouse_id: warehouse.id, city_id: targetCityId }, supabase, taskId, "self_delivery");
+      if (!verification.verified) {
+        results.push({ invoice, success: false, error: `API вернул 200, но самопривоз не применился: ${verification.mismatches.join("; ")}`, before: beforeState, after: afterState });
+        continue;
+      }
 
       results.push({ invoice, success: true, before: beforeState, after: afterState });
     } catch (e: any) {

@@ -1,4 +1,5 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, checkSenderStatusAllowed, findCity, normalizeCityName, stripCityFromAddress } from "./helpers.ts";
+import { verifyReceiverChange, verifySenderChange } from "./verify-change.ts";
 
 export async function executeChangeSenderDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -265,6 +266,12 @@ export async function executeChangeSenderDirection(
             request_data: { endpoint: `PUT ${sparkUrl}/senders/${sender.id}`, body: updatePayload },
             response_data: { status: updateResp.status }, success: true,
           });
+
+          // Verify sender city change
+          const senderVerify = await verifySenderChange(sparkUrl, sparkToken, item.id, { city_id: Number(senderTargetCityId) }, supabase, taskId, "change_sender_direction");
+          if (!senderVerify.verified) {
+            throw new Error(`Верификация отправителя не прошла: ${senderVerify.mismatches.join("; ")}`);
+          }
         }
       }
 
@@ -349,6 +356,12 @@ export async function executeChangeSenderDirection(
             request_data: { endpoint: `PUT ${sparkUrl}/receivers/${receiver.id}`, body: receiverPayload },
             response_data: { status: updateResp.status }, success: true,
           });
+
+          // Verify receiver city change
+          const recVerify = await verifyReceiverChange(sparkUrl, sparkToken, item.id, { city_id: Number(receiverTargetCityId) }, supabase, taskId, "change_sender_direction");
+          if (!recVerify.verified) {
+            throw new Error(`Верификация получателя не прошла: ${recVerify.mismatches.join("; ")}`);
+          }
         }
       }
 

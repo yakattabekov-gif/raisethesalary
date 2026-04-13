@@ -1,5 +1,6 @@
 import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, levenshtein, normalizeCityName, findCity, stripCityFromAddress } from "./helpers.ts";
 import { loadAllSparkCities } from "./load-spark-cities.ts";
+import { verifyReceiverChange, verifySenderChange } from "./verify-change.ts";
 
 export async function executeChangeDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -320,6 +321,12 @@ export async function executeChangeDirection(
             request_data: { endpoint: `PUT ${sparkUrl}/receivers/${receiver.id}`, body: receiverPayload },
             response_data: { status: updateResp.status }, success: true,
           });
+
+          // Verify receiver city change
+          const recVerify = await verifyReceiverChange(sparkUrl, sparkToken, item.id, { city_id: Number(receiverTargetCityId) }, supabase, taskId, "change_direction");
+          if (!recVerify.verified) {
+            throw new Error(`Верификация получателя не прошла: ${recVerify.mismatches.join("; ")}`);
+          }
         }
       }
 
@@ -416,6 +423,12 @@ export async function executeChangeDirection(
               request_data: { endpoint: `PUT ${sparkUrl}/senders/${sender.id}`, body: senderPayload },
               response_data: { status: updateResp.status }, success: true,
             });
+
+            // Verify sender city change
+            const senderVerify = await verifySenderChange(sparkUrl, sparkToken, item.id, { city_id: Number(senderTargetCityId) }, supabase, taskId, "change_direction");
+            if (!senderVerify.verified) {
+              throw new Error(`Верификация отправителя не прошла: ${senderVerify.mismatches.join("; ")}`);
+            }
           }
         }
       }
