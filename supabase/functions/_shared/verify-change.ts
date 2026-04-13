@@ -79,9 +79,20 @@ async function compareFields(
   return { verified, actual, mismatches };
 }
 
-function normalize(val: any): string {
+function normalize(val: any, fieldName?: string): string {
   if (val === null || val === undefined) return "";
+  
+  // For payment/shipment fields, resolve strings to numbers for consistent comparison
+  if (fieldName === "payment_type") return String(resolvePaymentType(val));
+  if (fieldName === "payment_method") return String(resolvePaymentMethod(val));
+  if (fieldName === "shipment_type") return String(resolveShipmentType(val));
+  
   if (typeof val === "number") return String(val);
-  if (typeof val === "string") return val.trim().toLowerCase();
+  if (typeof val === "string") {
+    // Try numeric comparison for numeric strings
+    const num = Number(val);
+    if (!isNaN(num)) return String(num);
+    return val.trim().toLowerCase();
+  }
   return JSON.stringify(val);
 }
