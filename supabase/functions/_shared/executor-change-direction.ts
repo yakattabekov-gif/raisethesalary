@@ -132,10 +132,25 @@ export async function executeChangeDirection(
       const receiver = logisticsInfo.receiver || {};
       const sender = logisticsInfo.sender || {};
       const receiverCityId = typeof receiver.city_id === 'number' ? receiver.city_id : Number(receiver.city_id);
-      const receiverCityName = receiver.city?.name || "";
+      let receiverCityName = receiver.city?.name || "";
       const senderCityId = typeof sender.city_id === 'number' ? sender.city_id : Number(sender.city_id);
-      const senderCityName = sender.city?.name || "";
+      let senderCityName = sender.city?.name || "";
 
+      // Fallback: if city name is empty, resolve from spark_cities by ID
+      if (!receiverCityName && receiverCityId) {
+        const cityFromList = allCities.find((c: any) => c.id === receiverCityId);
+        if (cityFromList) {
+          receiverCityName = cityFromList.name;
+          console.log(`[${VERSION}] Resolved receiver city name from spark_cities: id=${receiverCityId} → "${receiverCityName}"`);
+        }
+      }
+      if (!senderCityName && senderCityId) {
+        const cityFromList = allCities.find((c: any) => c.id === senderCityId);
+        if (cityFromList) {
+          senderCityName = cityFromList.name;
+          console.log(`[${VERSION}] Resolved sender city name from spark_cities: id=${senderCityId} → "${senderCityName}"`);
+        }
+      }
       console.log(`[${VERSION}] ${invoice}: sender city="${senderCityName}" (${senderCityId}), receiver city="${receiverCityName}" (${receiverCityId})`);
 
       let changeSender = false;
