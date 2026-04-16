@@ -10,6 +10,7 @@ import {
   resolveShipmentType,
   levenshtein,
 } from "../_shared/helpers.ts";
+import { evaluateInTransitDirectionChange, findCompletedInTransitStatus } from "../_shared/direction-rules.ts";
 import { loadAllSparkCities } from "../_shared/load-spark-cities.ts";
 
 // ========== normalizePhone ==========
@@ -588,4 +589,78 @@ Deno.test("scenario: single city Актау, receiver=Астана → change re
   const r = determineDirectionChanges(1, 2, null, dest.id);
   assert(r.changeReceiver);
   assert(!r.changeSender);
+});
+
+// ========== In-transit direction policy ==========
+
+Deno.test("in transit: child direction from current receiver city is allowed", () => {
+  const policy = evaluateInTransitDirectionChange({
+    inTransitCompleted: true,
+    currentReceiverCityName: "Семей",
+    requestedReceiverCityName: "Урджар",
+    changeSender: false,
+    changeReceiver: true,
+    allowedChildDirectionExists: true,
+  });
+
+  assertEquals(policy, { allowed: true });
+});
+
+Deno.test("in transit: changing to non-child destination is forbidden", () => {
+  const policy = evaluateInTransitDirectionChange({
+    inTransitCompleted: true,
+    currentReceiverCityName: "Астана",
+    requestedReceiverCityName: "Алматы",
+    changeSender: false,
+    changeReceiver: true,
+    allowedChildDirectionExists: false,
+  });
+
+  assertEquals(policy.allowed, false);
+  assert(policy.error?.includes("Астана"));
+  assert(policy.error?.includes("Алматы"));
+});
+
+Deno.test("in transit: sender change is forbidden even if child direction exists", () => {
+  const policy = evaluateInTransitDirectionChange({
+    inTransitCompleted: true,
+    currentReceiverCityName: "Семей",
+    requestedReceiverCityName: "Урджар",
+    changeSender: true,
+    changeReceiver: true,
+    allowedChildDirectionExists: true,
+  });
+
+  assertEquals(policy.allowed, false);
+  assert(policy.error?.includes("только дочернее направление получателя"));
+});
+
+Deno.test("not in transit: direction policy does not block changes", () => {
+  const policy = evaluateInTransitDirectionChange({
+    inTransitCompleted: false,
+    currentReceiverCityName: "Астана",
+    requestedReceiverCityName: "Алматы",
+    changeSender: true,
+    changeReceiver: true,
+    allowedChildDirectionExists: false,
+  });
+
+  assertEquals(policy, { allowed: true });
+});
+
+Deno.test("findCompletedInTransitStatus: detects completed transit by flat fields", () => {
+  const status = findCompletedInTransitStatus([
+    { status_code: 206, status_name: "Груз в пути", state: "completed" },
+  ]);
+
+  assert(status);
+  assertEquals(status.status_code, 206);
+});
+
+Deno.test("findCompletedInTransitStatus: ignores non-completed transit status", () => {
+  const status = findCompletedInTransitStatus([
+    { status_code: 206, status_name: "Груз в пути", state: "pending" },
+  ]);
+
+  assertEquals(status, null);
 });
