@@ -1,6 +1,7 @@
-import { VERSION, normalizePhone, searchInvoice, getLogisticsInfo, levenshtein, normalizeCityName, findCity, stripCityFromAddress } from "./helpers.ts";
+import { VERSION, searchInvoice, getLogisticsInfo, findCity, stripCityFromAddress, parseStatusHistory } from "./helpers.ts";
 import { loadAllSparkCities } from "./load-spark-cities.ts";
 import { verifyReceiverChange, verifySenderChange } from "./verify-change.ts";
+import { evaluateInTransitDirectionChange, findCompletedInTransitStatus } from "./direction-rules.ts";
 
 export async function executeChangeDirection(
   supabase: any, settings: Record<string, string>, aiResult: any, taskId: string, dryRun: boolean
@@ -102,82 +103,27 @@ export async function executeChangeDirection(
     response_data: { dest_city_id: cityId, dest_city_name: cityName, origin_city_id: originMatch?.id, origin_city_name: originMatch?.name, origin_resolution: originResolution }, success: true,
   });
 
-  // Check allowed_directions
-  let isAllowedDirection = false;
-  if (originMatch) {
-    const { data: allowedDirs } = await supabase
-      .from("allowed_directions").select("id")
-      .eq("parent_city", originMatch.name).eq("child_city", cityName).limit(1);
-    if (allowedDirs && allowedDirs.length > 0) {
-      isAllowedDirection = true;
-      console.log(`[${VERSION}] Direction "${originMatch.name}" → "${cityName}" is in allowed_directions`);
-    }
-    if (!isAllowedDirection) {
-      const { data: allowedDirsReverse } = await supabase
-        .from("allowed_directions").select("id")
-        .eq("parent_city", cityName).eq("child_city", originMatch.name).limit(1);
-      if (allowedDirsReverse && allowedDirsReverse.length > 0) {
-        isAllowedDirection = true;
-        console.log(`[${VERSION}] Direction "${cityName}" → "${originMatch.name}" is in allowed_directions (reverse)`);
-      }
-    }
-  }
-  if (!isAllowedDirection) {
-    const { data: allowedAny } = await supabase
-      .from("allowed_directions").select("id, parent_city")
-      .eq("child_city", cityName).limit(1);
-    if (allowedAny && allowedAny.length > 0) {
-      isAllowedDirection = true;
-      console.log(`[${VERSION}] Destination "${cityName}" found as child in allowed_directions (parent="${allowedAny[0].parent_city}")`);
-    }
-  }
-
   for (const invoice of invoices) {
     try {
       // 1. Check invoice status
       const statusResp = await fetch(
         `https://gateway.spark.kz/cabinet/api/invoice-status/${encodeURIComponent(invoice)}`
       );
-      if (statusResp.ok) {
-        const statusData = await statusResp.json();
-        console.log(`[${VERSION}] Invoice ${invoice} status response:`, JSON.stringify(statusData).substring(0, 500));
-        let statuses: any[] = [];
-        if (Array.isArray(statusData)) {
-          statuses = statusData;
-        } else if (statusData && typeof statusData === "object") {
-          if (Array.isArray(statusData.data?.status_history)) statuses = statusData.data.status_history;
-          else if (Array.isArray(statusData.data)) statuses = statusData.data;
-          else if (Array.isArray(statusData.statuses)) statuses = statusData.statuses;
-          else if (Array.isArray(statusData.status_history)) statuses = statusData.status_history;
-          else if (Array.isArray(statusData.result)) statuses = statusData.result;
-          else statuses = [statusData];
-        }
-        const inTransit = statuses.find((s: any) => s.status_code === 206 || s.status_name === "Груз в пути");
-        if (inTransit && inTransit.state === "completed") {
-          if (isAllowedDirection) {
-            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" completed but direction is ALLOWED — proceeding`);
-            await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "status_check",
-              request_data: { invoice, allowed_direction: true },
-              response_data: { status: inTransit, allowed: true }, success: true,
-            });
-          } else {
-            console.log(`[${VERSION}] Invoice ${invoice}: "Груз в пути" already completed — skipping direction change`);
-            await supabase.from("execution_logs").insert({
-              task_id: taskId, action: "change_direction", step: "status_check",
-              request_data: { invoice }, response_data: { status: inTransit }, success: false,
-              error_message: "Груз уже в пути — смена направления невозможна",
-            });
-            results.push({ invoice, success: false, error: "Груз уже в пути — смена направления невозможна" });
-            continue;
-          }
-        }
+      if (!statusResp.ok) {
+        const errorMsg = `Status check failed: ${statusResp.status}`;
+        await supabase.from("execution_logs").insert({
+          task_id: taskId, action: "change_direction", step: "status_check",
+          request_data: { invoice }, response_data: { status: statusResp.status }, success: false,
+          error_message: errorMsg,
+        });
+        results.push({ invoice, success: false, error: errorMsg });
+        continue;
       }
 
-      await supabase.from("execution_logs").insert({
-        task_id: taskId, action: "change_direction", step: "status_check",
-        request_data: { invoice }, response_data: { passed: true }, success: true,
-      });
+      const statusData = await statusResp.json();
+      console.log(`[${VERSION}] Invoice ${invoice} status response:`, JSON.stringify(statusData).substring(0, 500));
+      const statuses = parseStatusHistory(statusData);
+      const inTransit = findCompletedInTransitStatus(statuses);
 
       // 2. Get logistics info
       const item = await searchInvoice(sparkUrl, sparkToken, invoice);
@@ -213,6 +159,11 @@ export async function executeChangeDirection(
         // Requested pair means: sender must be in origin city, receiver must be in destination city.
         // Reverse direction is NOT considered "already matches".
         if (senderMatchesOrigin && receiverMatchesDestination) {
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_direction", step: "status_check",
+            request_data: { invoice, in_transit: !!inTransit },
+            response_data: { status: inTransit || "not_in_transit", passed: true, reason: "already_matches" }, success: true,
+          });
           results.push({ invoice, success: true, city: `${originCity || originMatch.name} - ${cityName}`, message: "Направление уже соответствует" });
           continue;
         }
@@ -240,10 +191,56 @@ export async function executeChangeDirection(
       } else {
         // Single city — change receiver
         if (receiverCityId === cityId) {
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_direction", step: "status_check",
+            request_data: { invoice, in_transit: !!inTransit },
+            response_data: { status: inTransit || "not_in_transit", passed: true, reason: "already_matches" }, success: true,
+          });
           results.push({ invoice, success: true, city: cityName, message: "Направление получателя уже соответствует" });
           continue;
         }
         changeReceiver = true;
+      }
+
+      if (inTransit) {
+        const { data: allowedChildDirections } = await supabase
+          .from("allowed_directions")
+          .select("id")
+          .eq("parent_city", receiverCityName)
+          .eq("child_city", receiverTargetCityName)
+          .limit(1);
+
+        const transitPolicy = evaluateInTransitDirectionChange({
+          inTransitCompleted: true,
+          currentReceiverCityName: receiverCityName,
+          requestedReceiverCityName: receiverTargetCityName,
+          changeSender,
+          changeReceiver,
+          allowedChildDirectionExists: !!allowedChildDirections?.length,
+        });
+
+        if (!transitPolicy.allowed) {
+          console.log(`[${VERSION}] Invoice ${invoice}: ${transitPolicy.error}`);
+          await supabase.from("execution_logs").insert({
+            task_id: taskId, action: "change_direction", step: "status_check",
+            request_data: { invoice, current_receiver_city: receiverCityName, requested_receiver_city: receiverTargetCityName, change_sender: changeSender, change_receiver: changeReceiver },
+            response_data: { status: inTransit, allowed_child_direction: !!allowedChildDirections?.length }, success: false,
+            error_message: transitPolicy.error,
+          });
+          results.push({ invoice, success: false, error: transitPolicy.error });
+          continue;
+        }
+
+        await supabase.from("execution_logs").insert({
+          task_id: taskId, action: "change_direction", step: "status_check",
+          request_data: { invoice, current_receiver_city: receiverCityName, requested_receiver_city: receiverTargetCityName, change_sender: changeSender, change_receiver: changeReceiver },
+          response_data: { status: inTransit, allowed_child_direction: true, passed: true }, success: true,
+        });
+      } else {
+        await supabase.from("execution_logs").insert({
+          task_id: taskId, action: "change_direction", step: "status_check",
+          request_data: { invoice }, response_data: { passed: true, in_transit: false }, success: true,
+        });
       }
 
       // ---- CHANGE RECEIVER if needed ----
