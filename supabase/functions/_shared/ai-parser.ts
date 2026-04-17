@@ -287,7 +287,24 @@ function postProcessActions(aiResult: any) {
       // CONFLICT DETECTION: cash_sum AND cod_payment both set in same action
       const hasCashSum = p.cash_sum !== null && p.cash_sum !== undefined && Number(p.cash_sum) > 0;
       const hasCodPayment = p.cod_payment !== null && p.cod_payment !== undefined;
-      if (hasCashSum && hasCodPayment) {
+      const isRemovingCod = hasCodPayment && Number(p.cod_payment) === 0;
+
+      // AUTO-FIX: removing COD (cod_payment=0) → null out cash_sum/payment_type/payment_method.
+      // No COD = no COD-related parameters. cash_sum is the COD amount, not freight cost when removing НП.
+      if (isRemovingCod) {
+        if (hasCashSum) {
+          console.log(`[${VERSION}] Post-process: cod_payment=0 (removing НП) → forcing cash_sum=${p.cash_sum} → null`);
+          p.cash_sum = null;
+        }
+        if (p.payment_type !== null && p.payment_type !== undefined) {
+          console.log(`[${VERSION}] Post-process: cod_payment=0 → forcing payment_type=${p.payment_type} → null (preserve original)`);
+          p.payment_type = null;
+        }
+        if (p.payment_method !== null && p.payment_method !== undefined) {
+          console.log(`[${VERSION}] Post-process: cod_payment=0 → forcing payment_method=${p.payment_method} → null (preserve original)`);
+          p.payment_method = null;
+        }
+      } else if (hasCashSum && hasCodPayment && Number(p.cod_payment) > 0) {
         console.log(`[${VERSION}] ⚠️ CONFLICT: cash_sum (${p.cash_sum}) AND cod_payment (${p.cod_payment}) both set for ${action.invoices?.join(", ")}. Flagging needs_review.`);
         aiResult.needs_review = true;
       }
@@ -663,6 +680,14 @@ change_sender_direction с данными (НЕ создавай отдельн�
 Объявленная стоимость с названием товара:
 Текст: "KXT110150456 объявленная стоимость 50000, товар: электроника"
 {"actions": [{"action": "set_declared_price", "invoices": ["KXT110150456"], "declared_price": 50000, "cargo_name": "электроника"}], "confidence": 0.95, "needs_review": false}
+
+Убрать НП + поставить объявленную стоимость (2 действия, сумма ТОЛЬКО в declared_price, cash_sum = null!):
+Текст: "SP00518516 убрать наложенный платеж 25000 и внести объявленную стоимость 25000"
+{"actions": [
+  {"action": "update_payment", "invoices": ["SP00518516"], "payment": {"payment_type": null, "payment_method": null, "cash_sum": null, "cod_payment": 0}},
+  {"action": "set_declared_price", "invoices": ["SP00518516"], "declared_price": 25000, "cargo_name": "-"}
+], "confidence": 0.95, "needs_review": false}
+⚠️ cash_sum = null! Сумма НЕ дублируется. cash_sum относится к НП, а НП мы убираем.
 
 Самопривоз + самовывоз (оба вместе):
 Текст: "SP00520002 самопривоз и самовывоз"
