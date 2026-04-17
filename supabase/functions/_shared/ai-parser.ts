@@ -287,7 +287,24 @@ function postProcessActions(aiResult: any) {
       // CONFLICT DETECTION: cash_sum AND cod_payment both set in same action
       const hasCashSum = p.cash_sum !== null && p.cash_sum !== undefined && Number(p.cash_sum) > 0;
       const hasCodPayment = p.cod_payment !== null && p.cod_payment !== undefined;
-      if (hasCashSum && hasCodPayment) {
+      const isRemovingCod = hasCodPayment && Number(p.cod_payment) === 0;
+
+      // AUTO-FIX: removing COD (cod_payment=0) → null out cash_sum/payment_type/payment_method.
+      // No COD = no COD-related parameters. cash_sum is the COD amount, not freight cost when removing НП.
+      if (isRemovingCod) {
+        if (hasCashSum) {
+          console.log(`[${VERSION}] Post-process: cod_payment=0 (removing НП) → forcing cash_sum=${p.cash_sum} → null`);
+          p.cash_sum = null;
+        }
+        if (p.payment_type !== null && p.payment_type !== undefined) {
+          console.log(`[${VERSION}] Post-process: cod_payment=0 → forcing payment_type=${p.payment_type} → null (preserve original)`);
+          p.payment_type = null;
+        }
+        if (p.payment_method !== null && p.payment_method !== undefined) {
+          console.log(`[${VERSION}] Post-process: cod_payment=0 → forcing payment_method=${p.payment_method} → null (preserve original)`);
+          p.payment_method = null;
+        }
+      } else if (hasCashSum && hasCodPayment && Number(p.cod_payment) > 0) {
         console.log(`[${VERSION}] ⚠️ CONFLICT: cash_sum (${p.cash_sum}) AND cod_payment (${p.cod_payment}) both set for ${action.invoices?.join(", ")}. Flagging needs_review.`);
         aiResult.needs_review = true;
       }
