@@ -681,6 +681,14 @@ change_sender_direction с данными (НЕ создавай отдельн�
 Текст: "KXT110150456 объявленная стоимость 50000, товар: электроника"
 {"actions": [{"action": "set_declared_price", "invoices": ["KXT110150456"], "declared_price": 50000, "cargo_name": "электроника"}], "confidence": 0.95, "needs_review": false}
 
+Убрать НП + поставить объявленную стоимость (2 действия, сумма ТОЛЬКО в declared_price, cash_sum = null!):
+Текст: "SP00518516 убрать наложенный платеж 25000 и внести объявленную стоимость 25000"
+{"actions": [
+  {"action": "update_payment", "invoices": ["SP00518516"], "payment": {"payment_type": null, "payment_method": null, "cash_sum": null, "cod_payment": 0}},
+  {"action": "set_declared_price", "invoices": ["SP00518516"], "declared_price": 25000, "cargo_name": "-"}
+], "confidence": 0.95, "needs_review": false}
+⚠️ cash_sum = null! Сумма НЕ дублируется. cash_sum относится к НП, а НП мы убираем.
+
 Самопривоз + самовывоз (оба вместе):
 Текст: "SP00520002 самопривоз и самовывоз"
 {"actions": [
