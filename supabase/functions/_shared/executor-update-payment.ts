@@ -60,19 +60,21 @@ export async function executeUpdatePayment(
       };
 
       // Determine if this is a cod_payment-only change (НП / наложка)
-      // Check: AI provided cod_payment AND did NOT provide valid numeric payment_type/method/cash_sum
       const hasValidPaymentType = paymentData.payment_type !== null && paymentData.payment_type !== undefined && !isNaN(Number(paymentData.payment_type)) && Number(paymentData.payment_type) > 0;
       const hasValidPaymentMethod = paymentData.payment_method !== null && paymentData.payment_method !== undefined && !isNaN(Number(paymentData.payment_method)) && Number(paymentData.payment_method) > 0;
       const hasValidCashSum = paymentData.cash_sum !== null && paymentData.cash_sum !== undefined && Number(paymentData.cash_sum) > 0;
       const hasCodPayment = paymentData.cod_payment !== null && paymentData.cod_payment !== undefined;
+      const isRemovingCod = hasCodPayment && Number(paymentData.cod_payment) === 0;
 
       const isCodOnly = hasCodPayment && !hasValidPaymentType && !hasValidPaymentMethod && !hasValidCashSum;
 
       if (isCodOnly) {
         console.log(`[${VERSION}] update_payment ${invoice}: COD-only change detected, preserving payment_type/method/cash_sum`);
       }
+      if (isRemovingCod) {
+        console.log(`[${VERSION}] update_payment ${invoice}: REMOVING COD (cod_payment=0) — ignoring any cash_sum/payment_type/payment_method from AI, preserving originals`);
+      }
 
-      // Resolve original payment_type and payment_method from strings to numbers
       const originalPaymentType = resolvePaymentType(logisticsInfo.payment_type);
       const originalPaymentMethod = resolvePaymentMethod(logisticsInfo.payment_method);
 
@@ -81,12 +83,11 @@ export async function executeUpdatePayment(
         updatePayload.cod_payment = Number(paymentData.cod_payment);
         console.log(`[${VERSION}] update_payment ${invoice}: setting cod_payment=${updatePayload.cod_payment} (AI explicit)`);
       } else {
-        // Preserve original cod_payment
         updatePayload.cod_payment = Number(logisticsInfo.cod_payment) || 0;
       }
 
-      // payment_type: ALWAYS preserve original if isCodOnly. Otherwise change only if mutable AND AI provided valid value
-      if (isCodOnly) {
+      // payment_type: preserve original if isCodOnly OR isRemovingCod
+      if (isCodOnly || isRemovingCod) {
         updatePayload.payment_type = originalPaymentType;
       } else if (isFieldMutable(mutable, "payment_type") && hasValidPaymentType) {
         updatePayload.payment_type = Number(paymentData.payment_type);
@@ -94,8 +95,8 @@ export async function executeUpdatePayment(
         updatePayload.payment_type = originalPaymentType;
       }
 
-      // payment_method: ALWAYS preserve original if isCodOnly. Otherwise change only if mutable AND AI provided valid value
-      if (isCodOnly) {
+      // payment_method: preserve original if isCodOnly OR isRemovingCod
+      if (isCodOnly || isRemovingCod) {
         updatePayload.payment_method = originalPaymentMethod;
       } else if (isFieldMutable(mutable, "payment_method") && hasValidPaymentMethod) {
         updatePayload.payment_method = Number(paymentData.payment_method);
@@ -103,8 +104,8 @@ export async function executeUpdatePayment(
         updatePayload.payment_method = originalPaymentMethod;
       }
 
-      // cash_sum: ALWAYS preserve original if isCodOnly. Otherwise change only if mutable AND AI provided valid value
-      if (isCodOnly) {
+      // cash_sum: preserve original if isCodOnly OR isRemovingCod (cash_sum belongs to COD context)
+      if (isCodOnly || isRemovingCod) {
         updatePayload.cash_sum = logisticsInfo.cash_sum || 0;
       } else if (isFieldMutable(mutable, "cash_sum") && paymentData.cash_sum !== null && paymentData.cash_sum !== undefined) {
         updatePayload.cash_sum = paymentData.cash_sum;
