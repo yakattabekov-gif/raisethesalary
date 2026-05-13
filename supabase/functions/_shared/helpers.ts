@@ -241,7 +241,7 @@ export function resolvePaymentMethod(val: any): number {
   if (!isNaN(num) && num > 0) return num;
   const map: Record<string, number> = {
     "накладная": 1, "накладной": 1, "invoice": 1,
-    "kaspi": 2, "каспи": 2,
+    "kaspi": 2, "каспи": 2, "kaspipay": 2, "kaspi pay": 2, "каспипэй": 2, "каспи пэй": 2,
     "перевод": 3, "перечисление": 3, "перечислением": 3, "перечислением на счет": 3, "transfer": 3,
     "наличные": 4, "наличными": 4, "cash": 4, "наличка": 4,
   };

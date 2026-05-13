@@ -130,8 +130,20 @@ async function executeAllActions(
   const allCommentLines: string[] = [];
   let allSuccess = true;
   let anySuccess = false;
+  let cancelled = false;
 
   for (const actionItem of aiResult.actions) {
+    // Check for emergency stop before each action
+    const { data: currentTask } = await supabase
+      .from("processed_tasks").select("status").eq("id", taskId).single();
+    if (currentTask?.status === "cancelled") {
+      console.log(`[${VERSION}] Task ${taskId} cancelled by user — aborting remaining actions`);
+      allCommentLines.push(`🛑 Обработка остановлена пользователем`);
+      cancelled = true;
+      allSuccess = false;
+      break;
+    }
+
     // Skip actions without invoices (except change_act_number which uses ftl_order_ids)
     if (actionItem.action !== "change_act_number" && (!actionItem.invoices || actionItem.invoices.length === 0)) {
       console.log(`[${VERSION}] Skipping action "${actionItem.action}" — no invoices provided`);
@@ -150,7 +162,7 @@ async function executeAllActions(
   // If no results at all, mark as not successful
   if (allResults.length === 0) allSuccess = false;
 
-  return { allResults, allCommentLines, allSuccess, anySuccess };
+  return { allResults, allCommentLines, allSuccess, anySuccess, cancelled };
 }
 
 // ---- Main Handler ----
@@ -235,7 +247,7 @@ serve(async (req) => {
         .from("processed_tasks").select("id, status, retry_count")
         .eq("jira_issue_key", issueKey).single();
 
-      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || (existing.status !== "waiting_for_info" && existing.retry_count >= 2))) {
+      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "cancelled" || existing.status === "processing" || (existing.status !== "waiting_for_info" && existing.retry_count >= 2))) {
         console.log(`[${VERSION}] Skipping ${issueKey}: status=${existing.status}, retry_count=${existing.retry_count}`);
         continue;
       }
@@ -298,9 +310,9 @@ serve(async (req) => {
           continue;
         }
 
-        const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
+        const { allResults, allCommentLines, allSuccess, anySuccess, cancelled } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-        const finalStatus = allSuccess ? "completed" : (anySuccess ? "pending" : "ignored");
+        const finalStatus = cancelled ? "cancelled" : (allSuccess ? "completed" : (anySuccess ? "pending" : "ignored"));
         await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
         // Send changes to Telegram (not to Jira comments)
@@ -362,9 +374,9 @@ serve(async (req) => {
             }
           }
 
-          const { allResults, allCommentLines, allSuccess, anySuccess } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
+          const { allResults, allCommentLines, allSuccess, anySuccess, cancelled } = await executeAllActions(aiResult, supabase, settings, taskId, dryRun);
 
-          const finalStatus = allSuccess ? "completed" : (anySuccess ? "pending" : "ignored");
+          const finalStatus = cancelled ? "cancelled" : (allSuccess ? "completed" : (anySuccess ? "pending" : "ignored"));
           await supabase.from("processed_tasks").update({ status: finalStatus, execution_result: allResults }).eq("id", taskId);
 
           if (anySuccess) {
