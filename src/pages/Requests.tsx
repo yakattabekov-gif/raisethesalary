@@ -103,6 +103,7 @@ const Requests = () => {
               <th className="w-12"></th>
               <th className="w-12"></th>
               <th className="w-12"></th>
+              <th className="w-12"></th>
             </tr>
           </thead>
           <tbody>
