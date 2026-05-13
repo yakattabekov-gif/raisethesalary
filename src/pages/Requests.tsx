@@ -35,6 +35,25 @@ const Requests = () => {
   const { data: executionLogs } = useExecutionLogs();
   const queryClient = useQueryClient();
   const [retrying, setRetrying] = useState<string | null>(null);
+  const [stopping, setStopping] = useState<string | null>(null);
+
+  const handleStop = async (taskId: string, issueKey: string) => {
+    if (!confirm(`Остановить обработку ${issueKey}?`)) return;
+    setStopping(taskId);
+    try {
+      const { error } = await supabase
+        .from("processed_tasks")
+        .update({ status: "cancelled" } as any)
+        .eq("id", taskId);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ["processed_tasks"] });
+      toast.success(`${issueKey} — обработка остановлена`);
+    } catch (e: any) {
+      toast.error(`Ошибка: ${e.message}`);
+    } finally {
+      setStopping(null);
+    }
+  };
 
   const handleRetry = async (taskId: string, issueKey: string) => {
     setRetrying(taskId);
