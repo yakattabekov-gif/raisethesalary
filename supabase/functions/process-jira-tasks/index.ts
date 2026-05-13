@@ -247,7 +247,7 @@ serve(async (req) => {
         .from("processed_tasks").select("id, status, retry_count")
         .eq("jira_issue_key", issueKey).single();
 
-      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "processing" || (existing.status !== "waiting_for_info" && existing.retry_count >= 2))) {
+      if (existing && (existing.status === "completed" || existing.status === "ignored" || existing.status === "cancelled" || existing.status === "processing" || (existing.status !== "waiting_for_info" && existing.retry_count >= 2))) {
         console.log(`[${VERSION}] Skipping ${issueKey}: status=${existing.status}, retry_count=${existing.retry_count}`);
         continue;
       }
