@@ -11,6 +11,7 @@ import { useState } from "react";
 const statusPill = (status: string) => {
   if (status === "completed") return <span className="pill-success">Completed</span>;
   if (status === "error") return <span className="pill-error">Error</span>;
+  if (status === "cancelled") return <span className="pill-error">Остановлено</span>;
   if (status === "pending" || status === "processing") return <span className="pill-warning">{status}</span>;
   return <span className="pill-idle">{status}</span>;
 };
