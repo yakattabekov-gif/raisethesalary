@@ -247,17 +247,27 @@ const Requests = () => {
                       <RotateCcw className={`w-4 h-4 ${retrying === task.id ? "animate-spin" : ""}`} />
                     </button>
                   </td>
+                  <td>
+                    <button
+                      onClick={() => handleStop(task.id, task.jira_issue_key)}
+                      disabled={stopping === task.id || !(task.status === "processing" || task.status === "pending")}
+                      className="p-2 rounded-full hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Экстренная остановка"
+                    >
+                      <Octagon className={`w-4 h-4 ${stopping === task.id ? "animate-pulse" : ""}`} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {isLoading && (
               <tr>
-                <td colSpan={9} className="text-center text-muted-foreground py-16">Загрузка...</td>
+                <td colSpan={10} className="text-center text-muted-foreground py-16">Загрузка...</td>
               </tr>
             )}
             {!isLoading && (!tasks || tasks.length === 0) && (
               <tr>
-                <td colSpan={9} className="text-center text-muted-foreground py-16">
+                <td colSpan={10} className="text-center text-muted-foreground py-16">
                   Нет обработанных заявок.
                 </td>
               </tr>
